@@ -75,6 +75,40 @@ export async function rollback(datasetDefinitionId: string) {
   return { publication, rolledBackTo: previousSnapshot };
 }
 
+/**
+ * Publish hook: simulates sending publication event to a Serve layer.
+ * In production this would call an external service or message queue.
+ */
+export async function triggerPublishHook(datasetSnapshotId: string) {
+  const snapshot = await prisma.datasetSnapshot.findUnique({
+    where: { id: datasetSnapshotId },
+    include: { datasetDefinition: true },
+  });
+  if (!snapshot) throw new Error("Snapshot not found");
+
+  const payload = {
+    event: "publish",
+    timestamp: new Date().toISOString(),
+    datasetDefinition: {
+      id: snapshot.datasetDefinition.id,
+      name: snapshot.datasetDefinition.name,
+    },
+    snapshot: {
+      id: snapshot.id,
+      version: snapshot.version,
+      status: snapshot.status,
+      entityCount: Array.isArray(snapshot.manifest)
+        ? snapshot.manifest.length
+        : 0,
+    },
+  };
+
+  // Simulate sending to Serve (log for now)
+  console.log("[PublishHook] Sending to Serve:", JSON.stringify(payload));
+
+  return { sent: true, payload };
+}
+
 export async function listPublications() {
   return prisma.publication.findMany({
     include: { datasetSnapshot: true },

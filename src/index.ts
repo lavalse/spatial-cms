@@ -7,6 +7,7 @@ import { entityRouter } from "./modules/entity/entity.router.js";
 import { proposalRouter } from "./modules/proposal/proposal.router.js";
 import { datasetRouter } from "./modules/dataset/dataset.router.js";
 import { publicationRouter } from "./modules/publication/publication.router.js";
+import { ingestionRouter } from "./modules/ingestion/ingestion.router.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -29,6 +30,7 @@ app.use("/api/v1/entities", entityRouter);
 app.use("/api/v1/proposals", proposalRouter);
 app.use("/api/v1/datasets", datasetRouter);
 app.use("/api/v1/publications", publicationRouter);
+app.use("/api/v1/ingestion", ingestionRouter);
 
 // Global error handler
 app.use(

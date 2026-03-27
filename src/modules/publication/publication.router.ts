@@ -26,6 +26,18 @@ publicationRouter.post("/publish", async (req, res, next) => {
   }
 });
 
+// POST /api/v1/publications/hook — simulate sending to Serve
+publicationRouter.post("/hook", async (req, res, next) => {
+  try {
+    const { datasetSnapshotId } = publishSchema.parse(req.body);
+    const result =
+      await publicationService.triggerPublishHook(datasetSnapshotId);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/v1/publications/rollback
 publicationRouter.post("/rollback", async (req, res, next) => {
   try {
