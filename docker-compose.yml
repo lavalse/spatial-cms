@@ -10,5 +10,25 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
 
+  directus:
+    image: directus/directus:11
+    ports:
+      - "8055:8055"
+    depends_on:
+      - db
+    environment:
+      DB_CLIENT: pg
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_DATABASE: spatial_cms
+      DB_USER: spatial_cms
+      DB_PASSWORD: spatial_cms
+      SECRET: spatial-cms-directus-secret-key
+      ADMIN_EMAIL: admin@example.com
+      ADMIN_PASSWORD: admin
+    volumes:
+      - directus_uploads:/directus/uploads
+
 volumes:
   pgdata:
+  directus_uploads:
