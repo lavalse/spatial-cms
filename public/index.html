@@ -710,7 +710,55 @@ async function viewModelDetail(main, modelId) {
       </div>
     </div>
 
-    ${m.sourceRelations?.length ? `<div class="card"><h3>Relations</h3>${m.sourceRelations.map(r => `<div class="field-item"><div class="fi-main"><div class="fi-label"><code>${r.key}</code></div><div class="fi-meta">${r.relationType} &rarr; ${r.targetModel.name}</div></div></div>`).join('')}</div>` : ''}`;
+    ${m.sourceRelations?.length ? `<div class="card"><h3>Relations</h3>${m.sourceRelations.map(r => `<div class="field-item"><div class="fi-main"><div class="fi-label"><code>${r.key}</code></div><div class="fi-meta">${r.relationType} &rarr; ${r.targetModel.name}</div></div></div>`).join('')}</div>` : ''}
+
+    <div class="card">
+      <h3>Governance Policy</h3>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:16px">Controls how proposals for this model are processed.</p>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Approval Mode</label>
+          <select id="gp-approval">
+            <option value="manual">Manual — proposals require human review</option>
+            <option value="auto">Auto — proposals auto-approve if validation passes</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Publish Mode</label>
+          <select id="gp-publish">
+            <option value="manual">Manual — snapshots must be published manually</option>
+            <option value="auto">Auto — snapshots auto-publish on approval</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;margin-top:8px">
+        <button class="btn btn-primary btn-sm" id="gp-save">Save Policy</button>
+        <span id="gp-status" style="font-size:13px;color:var(--muted)"></span>
+      </div>
+    </div>`;
+
+  // Load existing governance policy
+  try {
+    const policy = await api(`/definitions/governance/policies/model/${modelId}`);
+    if ($('gp-approval')) $('gp-approval').value = policy.approvalMode;
+    if ($('gp-publish')) $('gp-publish').value = policy.publishMode;
+    $('gp-status').textContent = 'Current policy loaded';
+  } catch {
+    $('gp-status').textContent = 'No policy set (default: manual)';
+  }
+
+  // Save governance policy
+  $('gp-save').onclick = async () => {
+    try {
+      await api('/definitions/governance/policies', { method: 'POST', body: JSON.stringify({
+        targetType: 'model', targetId: modelId,
+        approvalMode: $('gp-approval').value,
+        publishMode: $('gp-publish').value,
+      })});
+      toast('Policy saved');
+      $('gp-status').textContent = 'Saved';
+    } catch (err) { toast(err.message, 'error'); }
+  };
 
   // Toggle add-field form
   $('show-add-field').onclick = () => { $('add-field-form').style.display = 'block'; $('show-add-field').style.display = 'none'; $('af-key').focus(); };
