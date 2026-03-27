@@ -33,6 +33,7 @@ export async function createEntityInternal(data: {
   modelDefinitionId?: string;
   properties?: Record<string, unknown>;
   geometry?: { type: string; coordinates: unknown };
+  status?: "draft" | "active" | "archived";
 }) {
   // Resolve modelDefinitionId from type if not provided
   let modelDefId = data.modelDefinitionId;
@@ -53,7 +54,7 @@ export async function createEntityInternal(data: {
       type,
       modelDefinitionId: modelDefId,
       properties: data.properties ?? {},
-      status: "draft",
+      status: data.status ?? "active",
     },
   });
 

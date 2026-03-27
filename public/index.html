@@ -317,6 +317,16 @@ async function viewEntityDetail(main, entityId) {
   setBreadcrumb(['Content', `nav('content')`], [e.type, `nav('content/${e.type}')`], [e.properties?.name || 'Detail']);
   setActiveNav(`content/${e.type}`);
 
+  // Status action buttons
+  let statusActions = '';
+  if (e.status === 'active') {
+    statusActions = `<button class="btn btn-danger btn-sm" id="entity-archive">Archive</button>`;
+  } else if (e.status === 'draft') {
+    statusActions = `<button class="btn btn-success btn-sm" id="entity-activate">Activate</button> <button class="btn btn-danger btn-sm" id="entity-archive">Archive</button>`;
+  } else if (e.status === 'archived') {
+    statusActions = `<button class="btn btn-success btn-sm" id="entity-activate">Re-activate</button>`;
+  }
+
   main.innerHTML = `<div class="detail-grid">
     <div>
       <div class="card">
@@ -329,7 +339,7 @@ async function viewEntityDetail(main, entityId) {
     </div>
     <div class="meta-sidebar">
       <div class="card">
-        <div class="meta-item"><label>Status</label>${badge(e.status)}</div>
+        <div class="meta-item"><label>Status</label><div style="display:flex;align-items:center;gap:8px">${badge(e.status)} ${statusActions}</div></div>
         <div class="meta-item"><label>Model</label><span><code>${e.type}</code></span></div>
         <div class="meta-item"><label>ID</label><span style="font-size:12px;word-break:break-all">${e.id}</span></div>
         <div class="meta-item"><label>Created</label><span>${new Date(e.createdAt).toLocaleString()}</span></div>
@@ -337,6 +347,28 @@ async function viewEntityDetail(main, entityId) {
       </div>
     </div>
   </div>`;
+
+  // Status change: create proposal, let backend decide auto-approval
+  async function changeStatus(newStatus) {
+    try {
+      const prop = await api('/proposals', { method: 'POST', body: JSON.stringify({
+        entityId: e.id,
+        proposedChange: { action: newStatus === 'archived' ? 'delete' : 'update', data: { status: newStatus } }
+      })});
+      if (prop.status === 'approved') {
+        toast(`Status changed to ${newStatus}`);
+        reload();
+      } else {
+        toast('Proposal created. Go to Proposals to approve it.', 'success');
+        refreshPendingCount();
+      }
+    } catch (err) { toast(err.message, 'error'); }
+  }
+
+  const activateBtn = $('entity-activate');
+  const archiveBtn = $('entity-archive');
+  if (activateBtn) activateBtn.onclick = () => changeStatus('active');
+  if (archiveBtn) archiveBtn.onclick = () => changeStatus('archived');
 }
 
 // ─── New Record (Dynamic Form) ─────────────────────
@@ -396,9 +428,13 @@ async function viewNewRecord(main, modelKey) {
       if (lonEl?.value && latEl?.value) geometry = { type: 'Point', coordinates: [parseFloat(lonEl.value), parseFloat(latEl.value)] };
       else if (geoEl?.value) try { geometry = JSON.parse(geoEl.value); } catch { toast('Invalid GeoJSON', 'error'); return; }
 
-      await api('/proposals', { method: 'POST', body: JSON.stringify({ proposedChange: { action: 'create', data: { type: schema.key, properties, geometry } } }) });
-      toast('Proposal created! Go to Proposals to review.');
-      refreshPendingCount();
+      const prop = await api('/proposals', { method: 'POST', body: JSON.stringify({ proposedChange: { action: 'create', data: { type: schema.key, properties, geometry } } }) });
+      if (prop.status === 'approved') {
+        toast('Record created and auto-approved!');
+      } else {
+        toast('Proposal created. Go to Proposals to approve.');
+        refreshPendingCount();
+      }
       nav(`content/${modelKey}`);
     } catch (err) { toast(err.message, 'error'); }
   };

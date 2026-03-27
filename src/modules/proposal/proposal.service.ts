@@ -41,6 +41,11 @@ export async function createProposal(input: ProposalInput) {
     const model = await findModelDefinitionByKey(type);
     if (model) resolvedModelId = model.id;
   }
+  // Also resolve from entityId (for update/delete proposals)
+  if (!resolvedModelId && input.entityId) {
+    const entity = await prisma.entity.findUnique({ where: { id: input.entityId } });
+    if (entity?.modelDefinitionId) resolvedModelId = entity.modelDefinitionId;
+  }
 
   if (resolvedModelId) {
     const policy = await prisma.governancePolicy.findUnique({
