@@ -840,9 +840,9 @@ async function viewApiPlayground(main) {
   main.innerHTML = `
     <div class="page-header"><div><h2>API Playground</h2><div class="sub">Explore and test all API endpoints</div></div></div>
 
-    <div style="display:grid;grid-template-columns:340px 1fr;gap:16px;align-items:start">
+    <div style="display:grid;grid-template-columns:340px 1fr;gap:16px;height:calc(100vh - 160px)">
       <!-- Endpoint List -->
-      <div class="card" style="position:sticky;top:24px;max-height:calc(100vh - 120px);overflow-y:auto">
+      <div class="card" style="overflow-y:auto;margin-bottom:0">
         <h3 style="margin-bottom:12px">Endpoints</h3>
         ${apiEndpoints.map(g => `
           <div style="margin-bottom:16px">
@@ -860,7 +860,7 @@ async function viewApiPlayground(main) {
       </div>
 
       <!-- Request/Response Panel -->
-      <div>
+      <div style="overflow-y:auto">
         <div class="card" id="apg-request">
           <div style="color:var(--muted);text-align:center;padding:24px">Select an endpoint from the left to get started</div>
         </div>
