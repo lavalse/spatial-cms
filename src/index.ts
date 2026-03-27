@@ -8,6 +8,7 @@ import { proposalRouter } from "./modules/proposal/proposal.router.js";
 import { datasetRouter } from "./modules/dataset/dataset.router.js";
 import { publicationRouter } from "./modules/publication/publication.router.js";
 import { ingestionRouter } from "./modules/ingestion/ingestion.router.js";
+import { definitionRouter } from "./modules/definition/definition.router.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -31,6 +32,7 @@ app.use("/api/v1/proposals", proposalRouter);
 app.use("/api/v1/datasets", datasetRouter);
 app.use("/api/v1/publications", publicationRouter);
 app.use("/api/v1/ingestion", ingestionRouter);
+app.use("/api/v1/definitions", definitionRouter);
 
 // Global error handler
 app.use(
@@ -61,6 +63,8 @@ app.use(
       "Unknown action",
       "No active release",
       "No previous snapshot",
+      "Validation failed",
+      "already exists",
     ];
     if (businessErrors.some((msg) => err.message.includes(msg))) {
       res.status(400).json({ error: err.message });

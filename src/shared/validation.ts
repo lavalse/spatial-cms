@@ -20,7 +20,7 @@ const geoJsonGeometrySchema = z.object({
 export const createProposalSchema = z.object({
   entityId: z.string().uuid().optional(),
   proposedChange: z.object({
-    action: z.enum(["create", "update"]),
+    action: z.enum(["create", "update", "delete"]),
     data: z.object({
       type: z.string().min(1).optional(),
       properties: z.record(z.unknown()).optional(),
@@ -35,7 +35,7 @@ export const createProposalSchema = z.object({
 
 export const createDatasetDefinitionSchema = z.object({
   name: z.string().min(1),
-  entityTypes: z.array(z.string().min(1)).min(1),
+  entityTypes: z.array(z.string().min(1)).default([]),
   filterRule: z.record(z.unknown()).optional(),
   projectionRule: z.record(z.unknown()).optional(),
   primaryGeometryRule: z.record(z.unknown()).optional(),

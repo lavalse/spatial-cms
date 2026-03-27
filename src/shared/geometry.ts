@@ -38,6 +38,7 @@ export async function getEntityWithGeometry(entityId: string) {
     {
       id: string;
       type: string;
+      model_definition_id: string | null;
       properties: Prisma.JsonValue;
       status: string;
       geojson: string | null;
@@ -45,7 +46,7 @@ export async function getEntityWithGeometry(entityId: string) {
       updated_at: Date;
     }[]
   >`
-    SELECT id, type, properties, status,
+    SELECT id, type, model_definition_id, properties, status,
            ST_AsGeoJSON(geometry) as geojson,
            created_at, updated_at
     FROM entity
@@ -56,6 +57,7 @@ export async function getEntityWithGeometry(entityId: string) {
   return {
     id: row.id,
     type: row.type,
+    modelDefinitionId: row.model_definition_id,
     properties: row.properties,
     status: row.status,
     geometry: row.geojson ? JSON.parse(row.geojson) : null,

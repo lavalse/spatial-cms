@@ -10,7 +10,7 @@
     header { background: #1a1a2e; color: #fff; padding: 16px 24px; display: flex; align-items: center; gap: 12px; }
     header h1 { font-size: 20px; font-weight: 600; }
     .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
-    nav { display: flex; gap: 8px; margin-bottom: 24px; }
+    nav { display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; }
     nav button { padding: 8px 16px; border: 1px solid #ddd; background: #fff; border-radius: 6px; cursor: pointer; font-size: 14px; }
     nav button.active { background: #1a1a2e; color: #fff; border-color: #1a1a2e; }
     .panel { display: none; }
@@ -33,6 +33,7 @@
     .btn-reject { background: #dc3545; color: #fff; }
     .btn-primary { background: #007bff; color: #fff; }
     .btn-publish { background: #17a2b8; color: #fff; }
+    .btn-danger { background: #dc3545; color: #fff; }
     .btn:hover { opacity: 0.85; }
     .btn:disabled { opacity: 0.5; cursor: not-allowed; }
     .detail-card { background: #fff; border-radius: 8px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 16px; }
@@ -47,63 +48,53 @@
     .toast.success { background: #28a745; }
     .back-link { color: #007bff; cursor: pointer; font-size: 14px; margin-bottom: 16px; display: inline-block; }
     .empty { text-align: center; padding: 48px; color: #999; }
+    .form-group { margin-bottom: 12px; }
+    .form-group label { display: block; font-weight: 600; font-size: 13px; color: #555; margin-bottom: 4px; }
+    .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+    .form-group input[type="checkbox"] { width: auto; }
+    .form-row { display: flex; gap: 12px; }
+    .form-row .form-group { flex: 1; }
+    .form-card { background: #fff; border-radius: 8px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 16px; }
+    .form-card h3 { margin-bottom: 16px; }
+    .field-list-item { display: flex; align-items: center; gap: 8px; padding: 8px; border-bottom: 1px solid #eee; }
+    .field-list-item .field-info { flex: 1; }
+    .field-list-item .field-meta { color: #999; font-size: 12px; }
   </style>
 </head>
 <body>
-  <header>
-    <h1>Spatial CMS</h1>
-  </header>
-
+  <header><h1>Spatial CMS</h1></header>
   <div class="container">
     <nav>
       <button class="active" onclick="showPanel('entities')">Entities</button>
       <button onclick="showPanel('proposals')">Proposals</button>
       <button onclick="showPanel('datasets')">Datasets</button>
       <button onclick="showPanel('publications')">Publications</button>
+      <button onclick="showPanel('models')">Models</button>
+      <button onclick="showPanel('record-creator')">New Record</button>
     </nav>
 
-    <!-- Entities Panel -->
-    <div id="entities-panel" class="panel active">
-      <div id="entities-list"></div>
-      <div id="entity-detail" style="display:none"></div>
-    </div>
-
-    <!-- Proposals Panel -->
-    <div id="proposals-panel" class="panel">
-      <div id="proposals-list"></div>
-    </div>
-
-    <!-- Datasets Panel -->
-    <div id="datasets-panel" class="panel">
-      <div id="datasets-list"></div>
-      <div id="dataset-detail" style="display:none"></div>
-    </div>
-
-    <!-- Publications Panel -->
-    <div id="publications-panel" class="panel">
-      <div id="publications-list"></div>
-    </div>
+    <div id="entities-panel" class="panel active"><div id="entities-list"></div><div id="entity-detail" style="display:none"></div></div>
+    <div id="proposals-panel" class="panel"><div id="proposals-list"></div></div>
+    <div id="datasets-panel" class="panel"><div id="datasets-list"></div><div id="dataset-detail" style="display:none"></div></div>
+    <div id="publications-panel" class="panel"><div id="publications-list"></div></div>
+    <div id="models-panel" class="panel"><div id="models-list"></div><div id="model-detail" style="display:none"></div></div>
+    <div id="record-creator-panel" class="panel"><div id="record-creator"></div></div>
   </div>
-
   <div id="toast" class="toast"></div>
 
   <script>
     const API = '/api/v1';
 
-    // --- Navigation ---
     function showPanel(name) {
       document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
       document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
       document.getElementById(`${name}-panel`).classList.add('active');
-      document.querySelector(`nav button[onclick="showPanel('${name}')"]`).classList.add('active');
-
-      if (name === 'entities') loadEntities();
-      if (name === 'proposals') loadProposals();
-      if (name === 'datasets') loadDatasets();
-      if (name === 'publications') loadPublications();
+      const btn = document.querySelector(`nav button[onclick="showPanel('${name}')"]`);
+      if (btn) btn.classList.add('active');
+      const loaders = { entities: loadEntities, proposals: loadProposals, datasets: loadDatasets, publications: loadPublications, models: loadModels, 'record-creator': loadRecordCreator };
+      if (loaders[name]) loaders[name]();
     }
 
-    // --- Toast ---
     function toast(msg, type = 'success') {
       const el = document.getElementById('toast');
       el.textContent = msg;
@@ -112,38 +103,29 @@
       setTimeout(() => el.style.display = 'none', 3000);
     }
 
-    // --- API helpers ---
     async function api(path, opts = {}) {
-      const res = await fetch(`${API}${path}`, {
-        headers: { 'Content-Type': 'application/json' },
-        ...opts,
-      });
+      const res = await fetch(`${API}${path}`, { headers: { 'Content-Type': 'application/json' }, ...opts });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Request failed');
       return data;
     }
 
-    // --- Entities ---
+    // ─── Entities ──────────────────────────────────────
     async function loadEntities() {
       document.getElementById('entity-detail').style.display = 'none';
       const list = document.getElementById('entities-list');
       list.style.display = 'block';
       try {
         const entities = await api('/entities');
-        if (!entities.length) {
-          list.innerHTML = '<div class="empty">No entities yet. Create one through a proposal.</div>';
-          return;
-        }
+        if (!entities.length) { list.innerHTML = '<div class="empty">No entities yet.</div>'; return; }
         list.innerHTML = `<table>
           <thead><tr><th>Type</th><th>Name</th><th>Status</th><th>Created</th><th></th></tr></thead>
           <tbody>${entities.map(e => `<tr>
-            <td>${e.type}</td>
-            <td>${e.properties?.name || '—'}</td>
+            <td>${e.type}</td><td>${e.properties?.name || '—'}</td>
             <td><span class="badge ${e.status}">${e.status}</span></td>
             <td>${new Date(e.createdAt).toLocaleDateString()}</td>
             <td><button class="btn btn-primary" onclick="showEntity('${e.id}')">View</button></td>
-          </tr>`).join('')}</tbody>
-        </table>`;
+          </tr>`).join('')}</tbody></table>`;
       } catch (err) { toast(err.message, 'error'); }
     }
 
@@ -154,13 +136,12 @@
       try {
         const e = await api(`/entities/${id}`);
         detail.innerHTML = `
-          <span class="back-link" onclick="loadEntities()">&larr; Back to list</span>
+          <span class="back-link" onclick="loadEntities()">&larr; Back</span>
           <div class="detail-card">
             <h3>${e.properties?.name || e.type}</h3>
             <div class="detail-row"><label>ID</label><span>${e.id}</span></div>
             <div class="detail-row"><label>Type</label><span>${e.type}</span></div>
             <div class="detail-row"><label>Status</label><span class="badge ${e.status}">${e.status}</span></div>
-            <div class="detail-row"><label>Created</label><span>${new Date(e.createdAt).toLocaleString()}</span></div>
             <h4 style="margin-top:16px">Properties</h4>
             <pre>${JSON.stringify(e.properties, null, 2)}</pre>
             <h4 style="margin-top:16px">Geometry</h4>
@@ -169,75 +150,40 @@
       } catch (err) { toast(err.message, 'error'); }
     }
 
-    // --- Proposals ---
+    // ─── Proposals ─────────────────────────────────────
     async function loadProposals() {
       const list = document.getElementById('proposals-list');
       try {
         const proposals = await api('/proposals');
-        if (!proposals.length) {
-          list.innerHTML = '<div class="empty">No proposals yet.</div>';
-          return;
-        }
+        if (!proposals.length) { list.innerHTML = '<div class="empty">No proposals yet.</div>'; return; }
         list.innerHTML = `<table>
-          <thead><tr><th>Action</th><th>Entity Type</th><th>Source</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead>
-          <tbody>${proposals.map(p => {
-            const change = p.proposedChange;
-            return `<tr>
-              <td>${change.action}</td>
-              <td>${change.data?.type || '—'}</td>
-              <td>${p.source}</td>
-              <td><span class="badge ${p.status}">${p.status}</span></td>
-              <td>${new Date(p.createdAt).toLocaleDateString()}</td>
-              <td>${p.status === 'pending' ? `
-                <button class="btn btn-approve" onclick="approveProposal('${p.id}')">Approve</button>
-                <button class="btn btn-reject" onclick="rejectProposal('${p.id}')">Reject</button>
-              ` : '—'}</td>
-            </tr>`;
-          }).join('')}</tbody>
-        </table>`;
+          <thead><tr><th>Action</th><th>Type</th><th>Source</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead>
+          <tbody>${proposals.map(p => `<tr>
+            <td>${p.proposedChange.action}</td><td>${p.proposedChange.data?.type || '—'}</td>
+            <td>${p.source}</td><td><span class="badge ${p.status}">${p.status}</span></td>
+            <td>${new Date(p.createdAt).toLocaleDateString()}</td>
+            <td>${p.status === 'pending' ? `<button class="btn btn-approve" onclick="approveProposal('${p.id}')">Approve</button> <button class="btn btn-reject" onclick="rejectProposal('${p.id}')">Reject</button>` : '—'}</td>
+          </tr>`).join('')}</tbody></table>`;
       } catch (err) { toast(err.message, 'error'); }
     }
+    async function approveProposal(id) { try { await api(`/proposals/${id}/approve`, { method: 'POST' }); toast('Approved'); loadProposals(); } catch (err) { toast(err.message, 'error'); } }
+    async function rejectProposal(id) { try { await api(`/proposals/${id}/reject`, { method: 'POST' }); toast('Rejected'); loadProposals(); } catch (err) { toast(err.message, 'error'); } }
 
-    async function approveProposal(id) {
-      try {
-        await api(`/proposals/${id}/approve`, { method: 'POST' });
-        toast('Proposal approved');
-        loadProposals();
-      } catch (err) { toast(err.message, 'error'); }
-    }
-
-    async function rejectProposal(id) {
-      try {
-        await api(`/proposals/${id}/reject`, { method: 'POST' });
-        toast('Proposal rejected');
-        loadProposals();
-      } catch (err) { toast(err.message, 'error'); }
-    }
-
-    // --- Datasets ---
+    // ─── Datasets ──────────────────────────────────────
     async function loadDatasets() {
       document.getElementById('dataset-detail').style.display = 'none';
       const list = document.getElementById('datasets-list');
       list.style.display = 'block';
       try {
         const datasets = await api('/datasets');
-        if (!datasets.length) {
-          list.innerHTML = '<div class="empty">No dataset definitions yet.</div>';
-          return;
-        }
+        if (!datasets.length) { list.innerHTML = '<div class="empty">No datasets yet.</div>'; return; }
         list.innerHTML = `<table>
-          <thead><tr><th>Name</th><th>Entity Types</th><th>Active Snapshot</th><th>Created</th><th>Actions</th></tr></thead>
+          <thead><tr><th>Name</th><th>Entity Types</th><th>Active</th><th>Actions</th></tr></thead>
           <tbody>${datasets.map(d => `<tr>
-            <td>${d.name}</td>
-            <td>${(d.entityTypes || []).join(', ')}</td>
-            <td>${d.activeReleaseState ? `v${d.activeReleaseState.activeSnapshotId.substring(0, 8)}...` : '<span style="color:#999">None</span>'}</td>
-            <td>${new Date(d.createdAt).toLocaleDateString()}</td>
-            <td>
-              <button class="btn btn-primary" onclick="showDataset('${d.id}')">View</button>
-              <button class="btn btn-publish" onclick="generateSnapshot('${d.id}')">Snapshot</button>
-            </td>
-          </tr>`).join('')}</tbody>
-        </table>`;
+            <td>${d.name}</td><td>${(d.entityTypes || []).join(', ')}</td>
+            <td>${d.activeReleaseState ? 'Yes' : 'No'}</td>
+            <td><button class="btn btn-primary" onclick="showDataset('${d.id}')">View</button> <button class="btn btn-publish" onclick="generateSnapshot('${d.id}')">Snapshot</button></td>
+          </tr>`).join('')}</tbody></table>`;
       } catch (err) { toast(err.message, 'error'); }
     }
 
@@ -247,55 +193,54 @@
       detail.style.display = 'block';
       try {
         const d = await api(`/datasets/${id}`);
+        const bindings = await api(`/definitions/datasets/${id}/bindings`).catch(() => []);
         detail.innerHTML = `
-          <span class="back-link" onclick="loadDatasets()">&larr; Back to list</span>
+          <span class="back-link" onclick="loadDatasets()">&larr; Back</span>
           <div class="detail-card">
             <h3>${d.name}</h3>
-            <div class="detail-row"><label>Entity Types</label><span>${(d.entityTypes || []).join(', ')}</span></div>
-            <div class="detail-row"><label>Filter Rule</label><span>${d.filterRule ? JSON.stringify(d.filterRule) : 'None'}</span></div>
+            <h4 style="margin-top:12px">Model Bindings</h4>
+            ${bindings.length ? bindings.map(b => `<div class="field-list-item"><span class="field-info">${b.modelDefinition.name} (${b.modelDefinition.key})</span><button class="btn btn-danger" onclick="removeBinding('${id}','${b.id}')">Remove</button></div>`).join('') : '<p style="color:#999;margin:8px 0">No bindings. Add one below.</p>'}
+            <div style="margin-top:12px" id="bind-model-form-${id}"></div>
+            <button class="btn btn-primary" onclick="showBindForm('${id}')" style="margin-top:8px">Bind Model</button>
             <h4 style="margin-top:16px">Snapshots</h4>
-            ${d.snapshots && d.snapshots.length ? `<table>
-              <thead><tr><th>Version</th><th>Status</th><th>Entities</th><th>Created</th><th>Actions</th></tr></thead>
+            ${d.snapshots?.length ? `<table>
+              <thead><tr><th>Ver</th><th>Status</th><th>Entities</th><th>Actions</th></tr></thead>
               <tbody>${d.snapshots.map(s => `<tr>
-                <td>v${s.version}</td>
-                <td><span class="badge ${s.status}">${s.status}</span></td>
+                <td>v${s.version}</td><td><span class="badge ${s.status}">${s.status}</span></td>
                 <td>${Array.isArray(s.manifest) ? s.manifest.length : '?'}</td>
-                <td>${new Date(s.createdAt).toLocaleDateString()}</td>
                 <td>${s.status === 'ready' ? `<button class="btn btn-publish" onclick="publishSnapshot('${s.id}')">Publish</button>` : '—'}</td>
-              </tr>`).join('')}</tbody>
-            </table>` : '<div class="empty">No snapshots yet. Click "Snapshot" to generate one.</div>'}
+              </tr>`).join('')}</tbody></table>` : '<div class="empty">No snapshots.</div>'}
           </div>`;
       } catch (err) { toast(err.message, 'error'); }
     }
 
-    async function generateSnapshot(datasetId) {
+    async function showBindForm(datasetId) {
+      const container = document.getElementById(`bind-model-form-${datasetId}`);
+      const models = await api('/definitions/models');
+      container.innerHTML = `<div class="form-row">
+        <div class="form-group"><label>Model</label><select id="bind-model-select">${models.map(m => `<option value="${m.id}">${m.name}</option>`).join('')}</select></div>
+        <div class="form-group" style="flex:0"><label>&nbsp;</label><button class="btn btn-approve" onclick="addBinding('${datasetId}')">Add</button></div>
+      </div>`;
+    }
+    async function addBinding(datasetId) {
       try {
-        await api(`/datasets/${datasetId}/snapshot`, { method: 'POST' });
-        toast('Snapshot generated');
-        loadDatasets();
+        const modelId = document.getElementById('bind-model-select').value;
+        await api(`/definitions/datasets/${datasetId}/bindings`, { method: 'POST', body: JSON.stringify({ modelDefinitionId: modelId }) });
+        toast('Binding added'); showDataset(datasetId);
       } catch (err) { toast(err.message, 'error'); }
     }
-
-    async function publishSnapshot(snapshotId) {
-      try {
-        await api('/publications/publish', {
-          method: 'POST',
-          body: JSON.stringify({ datasetSnapshotId: snapshotId }),
-        });
-        toast('Snapshot published');
-        showPanel('datasets');
-      } catch (err) { toast(err.message, 'error'); }
+    async function removeBinding(datasetId, bindingId) {
+      try { await api(`/definitions/datasets/${datasetId}/bindings/${bindingId}`, { method: 'DELETE' }); toast('Binding removed'); showDataset(datasetId); } catch (err) { toast(err.message, 'error'); }
     }
+    async function generateSnapshot(datasetId) { try { await api(`/datasets/${datasetId}/snapshot`, { method: 'POST' }); toast('Snapshot generated'); loadDatasets(); } catch (err) { toast(err.message, 'error'); } }
+    async function publishSnapshot(snapshotId) { try { await api('/publications/publish', { method: 'POST', body: JSON.stringify({ datasetSnapshotId: snapshotId }) }); toast('Published'); showPanel('datasets'); } catch (err) { toast(err.message, 'error'); } }
 
-    // --- Publications ---
+    // ─── Publications ──────────────────────────────────
     async function loadPublications() {
       const list = document.getElementById('publications-list');
       try {
         const pubs = await api('/publications');
-        if (!pubs.length) {
-          list.innerHTML = '<div class="empty">No publications yet.</div>';
-          return;
-        }
+        if (!pubs.length) { list.innerHTML = '<div class="empty">No publications.</div>'; return; }
         list.innerHTML = `<table>
           <thead><tr><th>Type</th><th>Status</th><th>Snapshot</th><th>Created</th></tr></thead>
           <tbody>${pubs.map(p => `<tr>
@@ -303,12 +248,220 @@
             <td><span class="badge ${p.status}">${p.status}</span></td>
             <td>${p.datasetSnapshotId.substring(0, 8)}...</td>
             <td>${new Date(p.createdAt).toLocaleString()}</td>
-          </tr>`).join('')}</tbody>
-        </table>`;
+          </tr>`).join('')}</tbody></table>`;
       } catch (err) { toast(err.message, 'error'); }
     }
 
-    // --- Init ---
+    // ─── Models (Model Designer) ───────────────────────
+    async function loadModels() {
+      document.getElementById('model-detail').style.display = 'none';
+      const list = document.getElementById('models-list');
+      list.style.display = 'block';
+      try {
+        const models = await api('/definitions/models');
+        list.innerHTML = `
+          <div class="form-card">
+            <h3>Create Model</h3>
+            <div class="form-row">
+              <div class="form-group"><label>Key</label><input id="new-model-key" placeholder="e.g. building"></div>
+              <div class="form-group"><label>Name</label><input id="new-model-name" placeholder="e.g. Building"></div>
+              <div class="form-group"><label>Geometry</label><select id="new-model-geom"><option value="NONE">NONE</option><option value="POINT">POINT</option><option value="LINESTRING">LINESTRING</option><option value="POLYGON">POLYGON</option><option value="MIXED">MIXED</option></select></div>
+              <div class="form-group" style="flex:0"><label>&nbsp;</label><button class="btn btn-approve" onclick="createModel()">Create</button></div>
+            </div>
+          </div>
+          ${models.length ? `<table>
+            <thead><tr><th>Key</th><th>Name</th><th>Geometry</th><th>Fields</th><th>Entities</th><th></th></tr></thead>
+            <tbody>${models.map(m => `<tr>
+              <td><code>${m.key}</code></td><td>${m.name}</td>
+              <td><span class="badge">${m.geometryType}</span></td>
+              <td>${m.fields.length}</td><td>${m._count?.entities ?? 0}</td>
+              <td><button class="btn btn-primary" onclick="showModel('${m.id}')">Edit</button></td>
+            </tr>`).join('')}</tbody></table>` : ''}`;
+      } catch (err) { toast(err.message, 'error'); }
+    }
+
+    async function createModel() {
+      try {
+        const key = document.getElementById('new-model-key').value;
+        const name = document.getElementById('new-model-name').value;
+        const geometryType = document.getElementById('new-model-geom').value;
+        await api('/definitions/models', { method: 'POST', body: JSON.stringify({ key, name, geometryType }) });
+        toast('Model created'); loadModels();
+      } catch (err) { toast(err.message, 'error'); }
+    }
+
+    async function showModel(id) {
+      document.getElementById('models-list').style.display = 'none';
+      const detail = document.getElementById('model-detail');
+      detail.style.display = 'block';
+      try {
+        const m = await api(`/definitions/models/${id}`);
+        detail.innerHTML = `
+          <span class="back-link" onclick="loadModels()">&larr; Back</span>
+          <div class="detail-card">
+            <h3>${m.name} <code style="font-size:14px;color:#999">${m.key}</code></h3>
+            <div class="detail-row"><label>Geometry</label><span class="badge">${m.geometryType}</span></div>
+            <h4 style="margin-top:16px">Fields</h4>
+            ${m.fields.length ? m.fields.map(f => `<div class="field-list-item">
+              <span class="field-info"><strong>${f.label}</strong> <code>${f.key}</code> <span class="field-meta">${f.fieldType}${f.isRequired ? ' (required)' : ''}${f.enumValues ? ' [' + f.enumValues.join(',') + ']' : ''}</span></span>
+              <button class="btn btn-danger" onclick="deleteField('${m.id}','${f.id}')">Delete</button>
+            </div>`).join('') : '<p style="color:#999;margin:8px 0">No fields defined.</p>'}
+            <h4 style="margin-top:16px">Add Field</h4>
+            <div class="form-row">
+              <div class="form-group"><label>Key</label><input id="field-key" placeholder="name"></div>
+              <div class="form-group"><label>Label</label><input id="field-label" placeholder="Name"></div>
+              <div class="form-group"><label>Type</label><select id="field-type"><option value="string">string</option><option value="number">number</option><option value="boolean">boolean</option><option value="date">date</option><option value="enum_">enum</option><option value="json">json</option><option value="relation">relation</option></select></div>
+            </div>
+            <div class="form-row">
+              <div class="form-group"><label>Required</label><input type="checkbox" id="field-required"></div>
+              <div class="form-group"><label>Enum Values (comma sep.)</label><input id="field-enums" placeholder="a,b,c"></div>
+              <div class="form-group" style="flex:0"><label>&nbsp;</label><button class="btn btn-approve" onclick="addFieldToModel('${m.id}')">Add</button></div>
+            </div>
+            ${m.sourceRelations?.length ? `<h4 style="margin-top:16px">Relations</h4>${m.sourceRelations.map(r => `<div class="field-list-item"><span class="field-info"><code>${r.key}</code> &rarr; ${r.targetModel.name} (${r.relationType})</span></div>`).join('')}` : ''}
+          </div>`;
+      } catch (err) { toast(err.message, 'error'); }
+    }
+
+    async function addFieldToModel(modelId) {
+      try {
+        const key = document.getElementById('field-key').value;
+        const label = document.getElementById('field-label').value;
+        const fieldType = document.getElementById('field-type').value;
+        const isRequired = document.getElementById('field-required').checked;
+        const enumStr = document.getElementById('field-enums').value;
+        const body = { key, label, fieldType, isRequired };
+        if (enumStr) body.enumValues = enumStr.split(',').map(s => s.trim());
+        await api(`/definitions/models/${modelId}/fields`, { method: 'POST', body: JSON.stringify(body) });
+        toast('Field added'); showModel(modelId);
+      } catch (err) { toast(err.message, 'error'); }
+    }
+
+    async function deleteField(modelId, fieldId) {
+      try { await api(`/definitions/models/${modelId}/fields/${fieldId}`, { method: 'DELETE' }); toast('Field deleted'); showModel(modelId); } catch (err) { toast(err.message, 'error'); }
+    }
+
+    // ─── Record Creator (Dynamic Form) ─────────────────
+    async function loadRecordCreator() {
+      const container = document.getElementById('record-creator');
+      try {
+        const models = await api('/definitions/models');
+        container.innerHTML = `
+          <div class="form-card">
+            <h3>Create New Record</h3>
+            <div class="form-group"><label>Select Model</label>
+              <select id="rc-model" onchange="loadDynamicForm()">
+                <option value="">-- Select --</option>
+                ${models.map(m => `<option value="${m.id}">${m.name} (${m.key})</option>`).join('')}
+              </select>
+            </div>
+            <div id="rc-dynamic-form"></div>
+          </div>`;
+      } catch (err) { toast(err.message, 'error'); }
+    }
+
+    let currentSchema = null;
+    async function loadDynamicForm() {
+      const modelId = document.getElementById('rc-model').value;
+      const container = document.getElementById('rc-dynamic-form');
+      if (!modelId) { container.innerHTML = ''; currentSchema = null; return; }
+      try {
+        const schema = await api(`/definitions/models/${modelId}/schema`);
+        currentSchema = schema;
+        let html = '';
+
+        // Render fields
+        for (const f of schema.fields) {
+          html += `<div class="form-group"><label>${f.label}${f.isRequired ? ' *' : ''}</label>`;
+          switch (f.fieldType) {
+            case 'string':
+              html += `<input id="rc-f-${f.key}" type="text" ${f.isRequired ? 'required' : ''}>`;
+              break;
+            case 'number':
+              const min = f.validation?.min !== undefined ? `min="${f.validation.min}"` : '';
+              const max = f.validation?.max !== undefined ? `max="${f.validation.max}"` : '';
+              html += `<input id="rc-f-${f.key}" type="number" ${min} ${max} ${f.isRequired ? 'required' : ''}>`;
+              break;
+            case 'boolean':
+              html += `<input id="rc-f-${f.key}" type="checkbox">`;
+              break;
+            case 'date':
+              html += `<input id="rc-f-${f.key}" type="date" ${f.isRequired ? 'required' : ''}>`;
+              break;
+            case 'enum_':
+              html += `<select id="rc-f-${f.key}"><option value="">--</option>${(f.enumValues || []).map(v => `<option value="${v}">${v}</option>`).join('')}</select>`;
+              break;
+            case 'json':
+              html += `<textarea id="rc-f-${f.key}" rows="3" placeholder="JSON"></textarea>`;
+              break;
+            case 'relation':
+              html += `<input id="rc-f-${f.key}" type="text" placeholder="UUID">`;
+              break;
+            default:
+              html += `<input id="rc-f-${f.key}" type="text">`;
+          }
+          html += '</div>';
+        }
+
+        // Geometry inputs based on model type
+        if (schema.geometryType !== 'NONE') {
+          if (schema.geometryType === 'POINT' || schema.geometryType === 'MIXED') {
+            html += `<div class="form-row">
+              <div class="form-group"><label>Longitude</label><input id="rc-geo-lon" type="number" step="any" placeholder="139.7454"></div>
+              <div class="form-group"><label>Latitude</label><input id="rc-geo-lat" type="number" step="any" placeholder="35.6586"></div>
+            </div>`;
+          }
+          if (schema.geometryType === 'POLYGON' || schema.geometryType === 'LINESTRING') {
+            html += `<div class="form-group"><label>Geometry (GeoJSON)</label><textarea id="rc-geo-json" rows="4" placeholder='{"type":"Polygon","coordinates":[...]}'></textarea></div>`;
+          }
+        }
+
+        html += `<button class="btn btn-approve" onclick="submitRecord()" style="margin-top:12px">Submit as Proposal</button>`;
+        container.innerHTML = html;
+      } catch (err) { toast(err.message, 'error'); }
+    }
+
+    async function submitRecord() {
+      if (!currentSchema) return;
+      try {
+        const properties = {};
+        for (const f of currentSchema.fields) {
+          const el = document.getElementById(`rc-f-${f.key}`);
+          if (!el) continue;
+          if (f.fieldType === 'boolean') {
+            properties[f.key] = el.checked;
+          } else if (f.fieldType === 'number') {
+            if (el.value !== '') properties[f.key] = parseFloat(el.value);
+          } else if (f.fieldType === 'json') {
+            if (el.value) try { properties[f.key] = JSON.parse(el.value); } catch { toast('Invalid JSON in ' + f.key, 'error'); return; }
+          } else {
+            if (el.value) properties[f.key] = el.value;
+          }
+        }
+
+        let geometry = null;
+        if (currentSchema.geometryType === 'POINT' || currentSchema.geometryType === 'MIXED') {
+          const lon = document.getElementById('rc-geo-lon')?.value;
+          const lat = document.getElementById('rc-geo-lat')?.value;
+          if (lon && lat) geometry = { type: 'Point', coordinates: [parseFloat(lon), parseFloat(lat)] };
+        } else if (currentSchema.geometryType === 'POLYGON' || currentSchema.geometryType === 'LINESTRING') {
+          const raw = document.getElementById('rc-geo-json')?.value;
+          if (raw) try { geometry = JSON.parse(raw); } catch { toast('Invalid GeoJSON', 'error'); return; }
+        }
+
+        await api('/proposals', {
+          method: 'POST',
+          body: JSON.stringify({
+            proposedChange: {
+              action: 'create',
+              data: { type: currentSchema.key, properties, geometry }
+            }
+          })
+        });
+        toast('Proposal created! Go to Proposals to approve it.');
+      } catch (err) { toast(err.message, 'error'); }
+    }
+
+    // ─── Init ──────────────────────────────────────────
     loadEntities();
   </script>
 </body>

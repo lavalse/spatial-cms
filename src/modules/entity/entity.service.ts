@@ -3,14 +3,17 @@ import {
   getEntityWithGeometry,
   setEntityGeometry,
 } from "../../shared/geometry.js";
+import { findModelDefinitionByKey } from "../../shared/dynamic-validation.js";
 
 export async function listEntities(filters?: {
   type?: string;
   status?: string;
+  modelDefinitionId?: string;
 }) {
-  const where: Record<string, string> = {};
+  const where: Record<string, unknown> = {};
   if (filters?.type) where.type = filters.type;
   if (filters?.status) where.status = filters.status;
+  if (filters?.modelDefinitionId) where.modelDefinitionId = filters.modelDefinitionId;
 
   return prisma.entity.findMany({
     where,
@@ -27,12 +30,28 @@ export async function getEntity(id: string) {
 // This helper is used internally by the proposal approval flow.
 export async function createEntityInternal(data: {
   type: string;
+  modelDefinitionId?: string;
   properties?: Record<string, unknown>;
   geometry?: { type: string; coordinates: unknown };
 }) {
+  // Resolve modelDefinitionId from type if not provided
+  let modelDefId = data.modelDefinitionId;
+  let type = data.type;
+
+  if (modelDefId) {
+    // If modelDefinitionId provided, set type from model key
+    const model = await prisma.modelDefinition.findUnique({ where: { id: modelDefId } });
+    if (model) type = model.key;
+  } else if (type) {
+    // If only type provided, try to find matching ModelDefinition
+    const model = await findModelDefinitionByKey(type);
+    if (model) modelDefId = model.id;
+  }
+
   const entity = await prisma.entity.create({
     data: {
-      type: data.type,
+      type,
+      modelDefinitionId: modelDefId,
       properties: data.properties ?? {},
       status: "draft",
     },
@@ -48,7 +67,8 @@ export async function createEntityInternal(data: {
       entityId: entity.id,
       versionNumber: 1,
       snapshot: {
-        type: data.type,
+        type,
+        modelDefinitionId: modelDefId ?? null,
         properties: data.properties ?? {},
         geometry: data.geometry ?? null,
       },

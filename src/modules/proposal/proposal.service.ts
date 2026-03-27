@@ -3,13 +3,18 @@ import {
   createEntityInternal,
   updateEntityInternal,
 } from "../entity/entity.service.js";
+import {
+  validateAgainstModel,
+  findModelDefinitionByKey,
+} from "../../shared/dynamic-validation.js";
 
 interface ProposalInput {
   entityId?: string;
   proposedChange: {
-    action: "create" | "update";
+    action: "create" | "update" | "delete";
     data: {
       type?: string;
+      modelDefinitionId?: string;
       properties?: Record<string, unknown>;
       geometry?: { type: string; coordinates: unknown };
       status?: "draft" | "active" | "archived";
@@ -19,7 +24,7 @@ interface ProposalInput {
 }
 
 export async function createProposal(input: ProposalInput) {
-  return prisma.proposal.create({
+  const proposal = await prisma.proposal.create({
     data: {
       entityId: input.entityId,
       proposedChange: input.proposedChange as object,
@@ -27,6 +32,33 @@ export async function createProposal(input: ProposalInput) {
       status: "pending",
     },
   });
+
+  // Check for auto-approval governance policy
+  const type = input.proposedChange.data.type;
+  const modelDefId = input.proposedChange.data.modelDefinitionId;
+  let resolvedModelId = modelDefId;
+  if (!resolvedModelId && type) {
+    const model = await findModelDefinitionByKey(type);
+    if (model) resolvedModelId = model.id;
+  }
+
+  if (resolvedModelId) {
+    const policy = await prisma.governancePolicy.findUnique({
+      where: {
+        targetType_targetId: { targetType: "model", targetId: resolvedModelId },
+      },
+    });
+    if (policy?.approvalMode === "auto") {
+      try {
+        const result = await approveProposal(proposal.id);
+        return result.proposal;
+      } catch {
+        // Auto-approval failed (e.g. validation error), leave as pending
+      }
+    }
+  }
+
+  return proposal;
 }
 
 export async function listProposals(filters?: { status?: string }) {
@@ -53,23 +85,57 @@ export async function approveProposal(id: string) {
     action: string;
     data: {
       type?: string;
+      modelDefinitionId?: string;
       properties?: Record<string, unknown>;
       geometry?: { type: string; coordinates: unknown };
       status?: "draft" | "active" | "archived";
     };
   };
 
+  // Resolve modelDefinitionId for validation
+  let modelDefId = change.data.modelDefinitionId;
+  if (!modelDefId && change.data.type) {
+    const model = await findModelDefinitionByKey(change.data.type);
+    if (model) modelDefId = model.id;
+  }
+  if (!modelDefId && proposal.entityId) {
+    const existing = await prisma.entity.findUnique({
+      where: { id: proposal.entityId },
+    });
+    if (existing?.modelDefinitionId) modelDefId = existing.modelDefinitionId;
+  }
+
+  // Dynamic validation against model definition
+  if (modelDefId && change.data.properties) {
+    const validation = await validateAgainstModel(
+      modelDefId,
+      change.data.properties,
+      change.data.geometry ?? null,
+    );
+    if (!validation.valid) {
+      throw new Error(
+        `Validation failed: ${validation.errors.join("; ")}`,
+      );
+    }
+  }
+
   let entity;
 
   if (change.action === "create") {
     entity = await createEntityInternal({
       type: change.data.type!,
+      modelDefinitionId: modelDefId,
       properties: change.data.properties,
       geometry: change.data.geometry,
     });
   } else if (change.action === "update") {
     if (!proposal.entityId) throw new Error("entityId required for update");
     entity = await updateEntityInternal(proposal.entityId, change.data);
+  } else if (change.action === "delete") {
+    if (!proposal.entityId) throw new Error("entityId required for delete");
+    entity = await updateEntityInternal(proposal.entityId, {
+      status: "archived",
+    });
   } else {
     throw new Error(`Unknown action: ${change.action}`);
   }

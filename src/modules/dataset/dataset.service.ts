@@ -16,7 +16,7 @@ export async function getDatasetDefinition(id: string) {
 
 export async function createDatasetDefinition(data: {
   name: string;
-  entityTypes: string[];
+  entityTypes?: string[];
   filterRule?: object;
   projectionRule?: object;
   primaryGeometryRule?: object;
@@ -24,7 +24,7 @@ export async function createDatasetDefinition(data: {
   return prisma.datasetDefinition.create({
     data: {
       name: data.name,
-      entityTypes: data.entityTypes,
+      entityTypes: data.entityTypes ?? [],
       filterRule: data.filterRule ?? undefined,
       projectionRule: data.projectionRule ?? undefined,
       primaryGeometryRule: data.primaryGeometryRule ?? undefined,
@@ -39,31 +39,59 @@ export async function generateSnapshot(datasetDefinitionId: string) {
   });
   if (!definition) throw new Error("Dataset definition not found");
 
-  const entityTypes = definition.entityTypes as string[];
-
-  // Select active entities matching the definition's entity types
-  const entities = await prisma.entity.findMany({
-    where: {
-      type: { in: entityTypes },
-      status: "active",
-    },
-    include: {
-      versions: {
-        orderBy: { versionNumber: "desc" },
-        take: 1,
-      },
-    },
+  // Check for model bindings (new path)
+  const bindings = await prisma.datasetModelBinding.findMany({
+    where: { datasetDefinitionId },
+    include: { modelDefinition: true },
   });
 
-  // Build manifest: list of entity references with their current version
+  let entities;
+
+  if (bindings.length > 0) {
+    // New path: query entities by model bindings
+    const modelDefIds = bindings.map((b) => b.modelDefinitionId);
+    entities = await prisma.entity.findMany({
+      where: {
+        modelDefinitionId: { in: modelDefIds },
+        status: "active",
+      },
+      include: {
+        versions: {
+          orderBy: { versionNumber: "desc" },
+          take: 1,
+        },
+      },
+    });
+  } else {
+    // Legacy path: query by entityTypes array
+    const entityTypes = definition.entityTypes as string[];
+    if (!entityTypes.length) {
+      throw new Error("Dataset has no model bindings and no entity types");
+    }
+    entities = await prisma.entity.findMany({
+      where: {
+        type: { in: entityTypes },
+        status: "active",
+      },
+      include: {
+        versions: {
+          orderBy: { versionNumber: "desc" },
+          take: 1,
+        },
+      },
+    });
+  }
+
+  // Build manifest
   const manifest = entities.map((e) => ({
     entityId: e.id,
     type: e.type,
+    modelDefinitionId: e.modelDefinitionId,
     versionNumber: e.versions[0]?.versionNumber ?? 0,
     snapshot: e.versions[0]?.snapshot ?? null,
   }));
 
-  // Determine next version number
+  // Next version number
   const latestSnapshot = await prisma.datasetSnapshot.findFirst({
     where: { datasetDefinitionId },
     orderBy: { version: "desc" },

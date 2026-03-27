@@ -46,22 +46,67 @@ enum PublicationStatus {
   failed
 }
 
+// ─── Definition Kernel Enums ─────────────────────────
+
+enum GeometryType {
+  NONE
+  POINT
+  LINESTRING
+  POLYGON
+  MIXED
+}
+
+enum FieldType {
+  string
+  number
+  boolean
+  date
+  json
+  enum_
+  relation
+  geometry
+}
+
+enum RelationType {
+  belongs_to
+  has_many
+  many_to_many
+}
+
+enum GovernanceTargetType {
+  model
+  dataset
+}
+
+enum ApprovalMode {
+  manual
+  auto
+}
+
+enum PublishMode {
+  manual
+  auto
+}
+
 // ─── Models ──────────────────────────────────────────
 
 model Entity {
-  id         String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  type       String
-  properties Json         @default("{}")
-  geometry   Unsupported("geometry(Geometry, 4326)")?
-  status     EntityStatus @default(draft)
-  createdAt  DateTime     @default(now()) @map("created_at")
-  updatedAt  DateTime     @updatedAt @map("updated_at")
+  id                String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  type              String
+  modelDefinitionId String?           @map("model_definition_id") @db.Uuid
+  properties        Json              @default("{}")
+  geometry          Unsupported("geometry(Geometry, 4326)")?
+  status            EntityStatus      @default(draft)
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
 
-  versions  EntityVersion[]
-  proposals Proposal[]
+  modelDefinition ModelDefinition? @relation(fields: [modelDefinitionId], references: [id])
+  versions        EntityVersion[]
+  proposals       Proposal[]
 
   @@index([type])
   @@index([status])
+  @@index([modelDefinitionId])
   @@map("entity")
 }
 
@@ -106,6 +151,7 @@ model DatasetDefinition {
 
   snapshots          DatasetSnapshot[]
   activeReleaseState ActiveReleaseState?
+  modelBindings      DatasetModelBinding[]
 
   @@map("dataset_definition")
 }
@@ -149,4 +195,87 @@ model ActiveReleaseState {
   activeSnapshot    DatasetSnapshot   @relation(fields: [activeSnapshotId], references: [id], onDelete: Restrict)
 
   @@map("active_release_state")
+}
+
+// ─── Definition Kernel Models ────────────────────────
+
+model ModelDefinition {
+  id           String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  key          String       @unique
+  name         String
+  description  String?
+  geometryType GeometryType @default(NONE) @map("geometry_type")
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+
+  fields          FieldDefinition[]
+  sourceRelations RelationDefinition[] @relation("SourceModel")
+  targetRelations RelationDefinition[] @relation("TargetModel")
+  datasetBindings DatasetModelBinding[]
+  entities        Entity[]
+
+  @@map("model_definition")
+}
+
+model FieldDefinition {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  modelDefinitionId String    @map("model_definition_id") @db.Uuid
+  key               String
+  label             String
+  fieldType         FieldType @map("field_type")
+  isRequired        Boolean   @default(false) @map("is_required")
+  defaultValue      Json?     @map("default_value")
+  enumValues        Json?     @map("enum_values")
+  validationJson    Json?     @map("validation_json")
+  orderIndex        Int       @default(0) @map("order_index")
+
+  modelDefinition ModelDefinition @relation(fields: [modelDefinitionId], references: [id], onDelete: Cascade)
+
+  @@unique([modelDefinitionId, key])
+  @@index([modelDefinitionId])
+  @@map("field_definition")
+}
+
+model RelationDefinition {
+  id                      String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sourceModelDefinitionId String       @map("source_model_definition_id") @db.Uuid
+  targetModelDefinitionId String       @map("target_model_definition_id") @db.Uuid
+  relationType            RelationType @map("relation_type")
+  key                     String
+  inverseKey              String?      @map("inverse_key")
+  isRequired              Boolean      @default(false) @map("is_required")
+
+  sourceModel ModelDefinition @relation("SourceModel", fields: [sourceModelDefinitionId], references: [id], onDelete: Cascade)
+  targetModel ModelDefinition @relation("TargetModel", fields: [targetModelDefinitionId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceModelDefinitionId, key])
+  @@map("relation_definition")
+}
+
+model DatasetModelBinding {
+  id                  String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  datasetDefinitionId String @map("dataset_definition_id") @db.Uuid
+  modelDefinitionId   String @map("model_definition_id") @db.Uuid
+  filterJson          Json?  @map("filter_json")
+  projectionJson      Json?  @map("projection_json")
+
+  datasetDefinition DatasetDefinition @relation(fields: [datasetDefinitionId], references: [id], onDelete: Cascade)
+  modelDefinition   ModelDefinition   @relation(fields: [modelDefinitionId], references: [id], onDelete: Cascade)
+
+  @@unique([datasetDefinitionId, modelDefinitionId])
+  @@index([datasetDefinitionId])
+  @@map("dataset_model_binding")
+}
+
+model GovernancePolicy {
+  id              String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  targetType      GovernanceTargetType  @map("target_type")
+  targetId        String               @map("target_id") @db.Uuid
+  requireProposal Boolean              @default(true) @map("require_proposal")
+  approvalMode    ApprovalMode         @default(manual) @map("approval_mode")
+  publishMode     PublishMode          @default(manual) @map("publish_mode")
+  createdAt       DateTime             @default(now()) @map("created_at")
+
+  @@unique([targetType, targetId])
+  @@map("governance_policy")
 }
