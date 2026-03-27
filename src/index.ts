@@ -1,4 +1,5 @@
 import "dotenv/config";
+import path from "path";
 import express from "express";
 import { ZodError } from "zod";
 import prisma from "./db/client.js";
@@ -11,6 +12,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
+app.use(express.static(path.join(process.cwd(), "public")));
 
 // Health check
 app.get("/health", async (_req, res) => {
