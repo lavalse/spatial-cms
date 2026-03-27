@@ -155,6 +155,7 @@
     <div class="sidebar-spacer"></div>
     <div class="sidebar-section">Settings</div>
     <div class="sidebar-item" onclick="nav('models')" data-nav="models"><span>Model Designer</span></div>
+    <div class="sidebar-item" onclick="nav('api-playground')" data-nav="api-playground"><span>API Playground</span></div>
   </aside>
 
   <div class="topbar"><div class="breadcrumb" id="breadcrumb"></div></div>
@@ -248,6 +249,7 @@ async function router() {
     else if (parts[0] === 'datasets' && parts[1]) await viewDatasetDetail(main, parts[1]);
     else if (parts[0] === 'publications') await viewPublications(main);
     else if (parts[0] === 'publish-console') await viewPublishConsole(main);
+    else if (parts[0] === 'api-playground') await viewApiPlayground(main);
     else if (parts[0] === 'models' && parts.length === 1) await viewModels(main);
     else if (parts[0] === 'models' && parts[1]) await viewModelDetail(main, parts[1]);
     else await viewContentAll(main);
@@ -787,6 +789,217 @@ async function pcHookSnap(snapId, version) {
     const p = result.payload;
     pcAddLog('HOOK', `Sent: ${p.datasetDefinition.name} v${p.snapshot.version}, ${p.snapshot.entityCount} entities`);
   } catch (err) { pcAddLog('HOOK', `Failed: ${err.message}`, false); }
+}
+
+// ─── API Playground ────────────────────────────────
+const apiEndpoints = [
+  { group: 'Entities', endpoints: [
+    { method: 'GET', path: '/entities', desc: 'List all entities', params: [{ key: 'type', hint: 'e.g. building', where: 'query' }, { key: 'status', hint: 'draft/active/archived', where: 'query' }] },
+    { method: 'GET', path: '/entities/:id', desc: 'Get entity detail with geometry', params: [{ key: 'id', hint: 'Entity UUID', where: 'path', required: true }] },
+  ]},
+  { group: 'Proposals', endpoints: [
+    { method: 'GET', path: '/proposals', desc: 'List proposals', params: [{ key: 'status', hint: 'pending/approved/rejected', where: 'query' }] },
+    { method: 'GET', path: '/proposals/:id', desc: 'Get proposal detail', params: [{ key: 'id', hint: 'Proposal UUID', where: 'path', required: true }] },
+    { method: 'POST', path: '/proposals', desc: 'Create proposal', params: [{ key: 'body', where: 'body', hint: '{"proposedChange":{"action":"create","data":{"type":"building","properties":{"name":"Test"}}}}'  }] },
+    { method: 'POST', path: '/proposals/:id/approve', desc: 'Approve proposal', params: [{ key: 'id', hint: 'Proposal UUID', where: 'path', required: true }] },
+    { method: 'POST', path: '/proposals/:id/reject', desc: 'Reject proposal', params: [{ key: 'id', hint: 'Proposal UUID', where: 'path', required: true }] },
+  ]},
+  { group: 'Definitions', endpoints: [
+    { method: 'GET', path: '/definitions/models', desc: 'List all model definitions' },
+    { method: 'GET', path: '/definitions/models/:id', desc: 'Get model with fields & relations', params: [{ key: 'id', hint: 'Model UUID', where: 'path', required: true }] },
+    { method: 'GET', path: '/definitions/models/:id/schema', desc: 'Get model schema (for forms)', params: [{ key: 'id', hint: 'Model UUID', where: 'path', required: true }] },
+    { method: 'POST', path: '/definitions/models', desc: 'Create model', params: [{ key: 'body', where: 'body', hint: '{"key":"test","name":"Test","geometryType":"POINT"}' }] },
+    { method: 'POST', path: '/definitions/models/:id/fields', desc: 'Add field to model', params: [{ key: 'id', hint: 'Model UUID', where: 'path', required: true }, { key: 'body', where: 'body', hint: '{"key":"name","label":"Name","fieldType":"string","isRequired":true}' }] },
+    { method: 'GET', path: '/definitions/datasets/:datasetId/bindings', desc: 'List dataset model bindings', params: [{ key: 'datasetId', hint: 'Dataset UUID', where: 'path', required: true }] },
+    { method: 'GET', path: '/definitions/governance/policies/:targetType/:targetId', desc: 'Get governance policy', params: [{ key: 'targetType', hint: 'model or dataset', where: 'path', required: true }, { key: 'targetId', hint: 'UUID', where: 'path', required: true }] },
+  ]},
+  { group: 'Datasets', endpoints: [
+    { method: 'GET', path: '/datasets', desc: 'List all datasets' },
+    { method: 'GET', path: '/datasets/:id', desc: 'Get dataset with snapshots', params: [{ key: 'id', hint: 'Dataset UUID', where: 'path', required: true }] },
+    { method: 'POST', path: '/datasets', desc: 'Create dataset', params: [{ key: 'body', where: 'body', hint: '{"name":"My Dataset"}' }] },
+    { method: 'POST', path: '/datasets/:id/snapshot', desc: 'Generate snapshot', params: [{ key: 'id', hint: 'Dataset UUID', where: 'path', required: true }] },
+  ]},
+  { group: 'Publications', endpoints: [
+    { method: 'GET', path: '/publications', desc: 'List publication history' },
+    { method: 'POST', path: '/publications/publish', desc: 'Publish snapshot', params: [{ key: 'body', where: 'body', hint: '{"datasetSnapshotId":"UUID"}' }] },
+    { method: 'POST', path: '/publications/rollback', desc: 'Rollback dataset', params: [{ key: 'body', where: 'body', hint: '{"datasetDefinitionId":"UUID"}' }] },
+    { method: 'POST', path: '/publications/hook', desc: 'Trigger publish hook', params: [{ key: 'body', where: 'body', hint: '{"datasetSnapshotId":"UUID"}' }] },
+  ]},
+  { group: 'Ingestion', endpoints: [
+    { method: 'POST', path: '/ingestion/import', desc: 'Bulk import entities', params: [{ key: 'body', where: 'body', hint: '{"entities":[{"type":"building","properties":{"name":"Test"}}]}' }] },
+    { method: 'POST', path: '/ingestion/proposal-set', desc: 'Batch create proposals', params: [{ key: 'body', where: 'body', hint: '{"proposals":[{"proposedChange":{"action":"create","data":{"type":"building","properties":{"name":"Test"}}}}]}' }] },
+  ]},
+];
+
+let apgHistory = [];
+
+async function viewApiPlayground(main) {
+  setBreadcrumb(['API Playground']);
+  setActiveNav('api-playground');
+
+  main.innerHTML = `
+    <div class="page-header"><div><h2>API Playground</h2><div class="sub">Explore and test all API endpoints</div></div></div>
+
+    <div style="display:grid;grid-template-columns:340px 1fr;gap:16px;align-items:start">
+      <!-- Endpoint List -->
+      <div class="card" style="position:sticky;top:24px;max-height:calc(100vh - 120px);overflow-y:auto">
+        <h3 style="margin-bottom:12px">Endpoints</h3>
+        ${apiEndpoints.map(g => `
+          <div style="margin-bottom:16px">
+            <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:6px">${g.group}</div>
+            ${g.endpoints.map((ep, i) => {
+              const gIdx = apiEndpoints.indexOf(g);
+              const methodColor = ep.method === 'GET' ? 'var(--success)' : ep.method === 'POST' ? 'var(--primary)' : ep.method === 'DELETE' ? 'var(--danger)' : 'var(--warning)';
+              return `<div class="sidebar-item" style="padding:6px 8px;border-left:none;border-radius:4px;cursor:pointer;font-size:13px" onclick="apgSelect(${gIdx},${i})" data-apg="${gIdx}-${i}">
+                <span style="font-size:11px;font-weight:700;color:${methodColor};min-width:36px">${ep.method}</span>
+                <span style="color:var(--text)">${ep.desc}</span>
+              </div>`;
+            }).join('')}
+          </div>
+        `).join('')}
+      </div>
+
+      <!-- Request/Response Panel -->
+      <div>
+        <div class="card" id="apg-request">
+          <div style="color:var(--muted);text-align:center;padding:24px">Select an endpoint from the left to get started</div>
+        </div>
+        <div class="card" id="apg-response" style="display:none">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+            <h3 style="margin:0">Response</h3>
+            <div id="apg-resp-meta" style="font-size:13px"></div>
+          </div>
+          <pre id="apg-resp-body" style="max-height:500px;overflow:auto;margin:0;white-space:pre-wrap"></pre>
+        </div>
+        ${apgHistory.length ? renderApgHistory() : ''}
+      </div>
+    </div>`;
+}
+
+function renderApgHistory() {
+  return `<div class="card"><h3>Recent Requests</h3>
+    ${apgHistory.slice(0, 10).map(h => `<div style="padding:8px;border-bottom:1px solid var(--border);font-size:13px;cursor:pointer" onclick="apgShowHistory(${apgHistory.indexOf(h)})">
+      <span style="font-weight:700;color:${h.method === 'GET' ? 'var(--success)' : 'var(--primary)'}">${h.method}</span>
+      <code style="color:var(--muted)">${h.path}</code>
+      <span style="float:right;color:${h.ok ? 'var(--success)' : 'var(--danger)'};">${h.status}</span>
+    </div>`).join('')}
+  </div>`;
+}
+
+let apgCurrentEndpoint = null;
+
+function apgSelect(gIdx, eIdx) {
+  const ep = apiEndpoints[gIdx].endpoints[eIdx];
+  apgCurrentEndpoint = ep;
+
+  // Highlight active
+  document.querySelectorAll('[data-apg]').forEach(el => el.style.background = '');
+  const active = document.querySelector(`[data-apg="${gIdx}-${eIdx}"]`);
+  if (active) active.style.background = 'var(--bg)';
+
+  const methodColor = ep.method === 'GET' ? 'var(--success)' : 'var(--primary)';
+  const params = ep.params || [];
+  const pathParams = params.filter(p => p.where === 'path');
+  const queryParams = params.filter(p => p.where === 'query');
+  const bodyParam = params.find(p => p.where === 'body');
+
+  let html = `
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+      <span style="font-size:14px;font-weight:700;color:${methodColor};background:${methodColor}15;padding:4px 10px;border-radius:4px">${ep.method}</span>
+      <code style="font-size:15px">/api/v1${ep.path}</code>
+    </div>
+    <p style="color:var(--muted);font-size:14px;margin-bottom:16px">${ep.desc}</p>`;
+
+  if (pathParams.length) {
+    html += `<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;margin-bottom:8px">Path Parameters</div>`;
+    for (const p of pathParams) {
+      html += `<div class="form-group" style="margin-bottom:8px"><label>${p.key} ${p.required ? '<span style="color:var(--danger)">*</span>' : ''}</label><input id="apg-p-${p.key}" placeholder="${p.hint || ''}" style="font-family:monospace"></div>`;
+    }
+    html += '</div>';
+  }
+
+  if (queryParams.length) {
+    html += `<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;margin-bottom:8px">Query Parameters</div>`;
+    for (const p of queryParams) {
+      html += `<div class="form-group" style="margin-bottom:8px"><label>${p.key}</label><input id="apg-q-${p.key}" placeholder="${p.hint || ''}" style="font-family:monospace"></div>`;
+    }
+    html += '</div>';
+  }
+
+  if (bodyParam) {
+    html += `<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;margin-bottom:8px">Request Body (JSON)</div>
+      <textarea id="apg-body" rows="6" style="font-family:monospace;font-size:13px;width:100%;padding:12px;border:1px solid var(--border);border-radius:6px;background:#fafafa">${bodyParam.hint || '{}'}</textarea>
+    </div>`;
+  }
+
+  html += `<button class="btn btn-primary" onclick="apgSend()">Send Request</button>`;
+
+  $('apg-request').innerHTML = html;
+  $('apg-response').style.display = 'none';
+}
+
+async function apgSend() {
+  if (!apgCurrentEndpoint) return;
+  const ep = apgCurrentEndpoint;
+  const params = ep.params || [];
+
+  // Build URL
+  let path = ep.path;
+  for (const p of params.filter(p => p.where === 'path')) {
+    const val = $(`apg-p-${p.key}`)?.value;
+    if (p.required && !val) { toast(`${p.key} is required`, 'error'); return; }
+    path = path.replace(`:${p.key}`, val || '');
+  }
+
+  // Query string
+  const queryParts = [];
+  for (const p of params.filter(p => p.where === 'query')) {
+    const val = $(`apg-q-${p.key}`)?.value;
+    if (val) queryParts.push(`${p.key}=${encodeURIComponent(val)}`);
+  }
+  if (queryParts.length) path += '?' + queryParts.join('&');
+
+  // Body
+  const bodyParam = params.find(p => p.where === 'body');
+  let body;
+  if (bodyParam) {
+    const raw = $('apg-body')?.value;
+    if (raw) {
+      try { body = raw; JSON.parse(raw); } catch { toast('Invalid JSON body', 'error'); return; }
+    }
+  }
+
+  const fullPath = `/api/v1${path}`;
+  const startTime = Date.now();
+
+  try {
+    const opts = { method: ep.method, headers: { 'Content-Type': 'application/json' } };
+    if (body && ep.method !== 'GET') opts.body = body;
+    const res = await fetch(fullPath, opts);
+    const elapsed = Date.now() - startTime;
+    const data = await res.json();
+
+    // Show response
+    $('apg-response').style.display = 'block';
+    $('apg-resp-meta').innerHTML = `<span style="color:${res.ok ? 'var(--success)' : 'var(--danger)'}; font-weight:600">${res.status} ${res.statusText}</span> <span style="color:var(--muted)">${elapsed}ms</span>`;
+    $('apg-resp-body').textContent = JSON.stringify(data, null, 2);
+
+    // Add to history
+    apgHistory.unshift({ method: ep.method, path: fullPath, status: res.status, ok: res.ok, elapsed, response: data, timestamp: new Date() });
+    if (apgHistory.length > 20) apgHistory.pop();
+
+  } catch (err) {
+    $('apg-response').style.display = 'block';
+    $('apg-resp-meta').innerHTML = `<span style="color:var(--danger);font-weight:600">Network Error</span>`;
+    $('apg-resp-body').textContent = err.message;
+  }
+}
+
+function apgShowHistory(idx) {
+  const h = apgHistory[idx];
+  $('apg-response').style.display = 'block';
+  $('apg-resp-meta').innerHTML = `<span style="font-weight:600;color:${h.ok ? 'var(--success)' : 'var(--danger)'}">${h.status}</span> <span style="color:var(--muted)">${h.elapsed}ms &middot; ${h.timestamp.toLocaleTimeString()}</span>`;
+  $('apg-resp-body').textContent = JSON.stringify(h.response, null, 2);
 }
 
 // ─── Model Designer ────────────────────────────────
