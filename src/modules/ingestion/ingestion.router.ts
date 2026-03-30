@@ -81,6 +81,21 @@ ingestionRouter.post("/validate", async (req, res, next) => {
   }
 });
 
+// POST /api/v1/ingestion/governed
+ingestionRouter.post("/governed", async (req, res, next) => {
+  try {
+    const data = importSchema.parse(req.body);
+    const result = await ingestionService.governedImport(
+      data.entities,
+      data.source,
+      data.options,
+    );
+    res.status(201).json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/v1/ingestion/import
 ingestionRouter.post("/import", async (req, res, next) => {
   try {

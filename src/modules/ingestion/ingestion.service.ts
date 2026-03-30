@@ -4,6 +4,7 @@ import {
   validateAgainstModel,
   findModelDefinitionByKey,
 } from "../../shared/dynamic-validation.js";
+import { createProposal } from "../proposal/proposal.service.js";
 
 interface ImportEntity {
   type: string;
@@ -192,4 +193,90 @@ export async function createProposalSet(
   });
 
   return { created: created.length, proposals: created };
+}
+
+/**
+ * Governed import: creates proposals through the normal governance pipeline.
+ * - Models with approvalMode=auto → auto-approved, entities created immediately
+ * - Models with approvalMode=manual → proposals stay pending for review
+ * This is the recommended import mode for data pipelines.
+ */
+export async function governedImport(
+  entities: ImportEntity[],
+  source: "human" | "machine" | "import_" = "machine",
+  options: ImportOptions = {},
+) {
+  const { skipInvalid = false } = options;
+
+  // Resolve model for validation
+  const modelCache: Record<string, string | null> = {};
+  for (const item of entities) {
+    if (!(item.type in modelCache)) {
+      const model = await findModelDefinitionByKey(item.type);
+      modelCache[item.type] = model?.id ?? null;
+    }
+  }
+
+  // Validate first
+  const validationErrors: Array<{ index: number; errors: string[] }> = [];
+  for (let i = 0; i < entities.length; i++) {
+    const result = await validateAgainstModel(
+      modelCache[entities[i].type],
+      entities[i].properties,
+      entities[i].geometry ?? null,
+    );
+    if (!result.valid) {
+      validationErrors.push({ index: i, errors: result.errors });
+    }
+  }
+
+  if (!skipInvalid && validationErrors.length > 0) {
+    return {
+      approved: 0,
+      pending: 0,
+      skipped: validationErrors.length,
+      total: entities.length,
+      errors: validationErrors,
+      results: [],
+    };
+  }
+
+  const invalidIndices = new Set(validationErrors.map((e) => e.index));
+  const results: Array<{ index: number; status: string; proposalId: string }> = [];
+  let approved = 0;
+  let pending = 0;
+
+  for (let i = 0; i < entities.length; i++) {
+    if (invalidIndices.has(i)) continue;
+    const item = entities[i];
+
+    // Use createProposal which handles auto-approval via GovernancePolicy
+    const proposal = await createProposal({
+      proposedChange: {
+        action: "create",
+        data: {
+          type: item.type,
+          properties: item.properties,
+          geometry: item.geometry,
+        },
+      },
+      source,
+    });
+
+    if (proposal.status === "approved") {
+      approved++;
+    } else {
+      pending++;
+    }
+    results.push({ index: i, status: proposal.status, proposalId: proposal.id });
+  }
+
+  return {
+    approved,
+    pending,
+    skipped: invalidIndices.size,
+    total: entities.length,
+    errors: validationErrors,
+    results,
+  };
 }
