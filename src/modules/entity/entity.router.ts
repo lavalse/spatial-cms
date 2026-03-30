@@ -17,6 +17,17 @@ entityRouter.get("/", async (req, res, next) => {
   }
 });
 
+// GET /api/v1/entities/:id/versions
+entityRouter.get("/:id/versions", async (req, res, next) => {
+  try {
+    const { id } = uuidParamSchema.parse(req.params);
+    const versions = await entityService.getEntityVersions(id);
+    res.json(versions);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/v1/entities/:id
 entityRouter.get("/:id", async (req, res, next) => {
   try {

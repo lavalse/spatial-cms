@@ -403,9 +403,12 @@ async function viewEntityDetail(main, entityId) {
 
   main.innerHTML = `<div class="detail-grid">
     <div>
-      <div class="card">
-        <h3>${e.properties?.name || e.type}</h3>
-        <h4 style="margin:16px 0 8px;font-size:14px;color:var(--muted)">Properties</h4>
+      <div class="card" id="entity-main-card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+          <h3 style="margin:0">${e.properties?.name || e.type}</h3>
+          ${e.modelDefinitionId ? '<button class="btn btn-primary btn-sm" id="entity-edit">Edit</button>' : ''}
+        </div>
+        <h4 style="margin:0 0 8px;font-size:14px;color:var(--muted)">Properties</h4>
         <pre>${JSON.stringify(e.properties, null, 2)}</pre>
         <h4 style="margin:16px 0 8px;font-size:14px;color:var(--muted)">Geometry</h4>
         <pre>${e.geometry ? JSON.stringify(e.geometry, null, 2) : 'None'}</pre>
@@ -419,30 +422,155 @@ async function viewEntityDetail(main, entityId) {
         <div class="meta-item"><label>Created</label><span>${new Date(e.createdAt).toLocaleString()}</span></div>
         <div class="meta-item"><label>Updated</label><span>${new Date(e.updatedAt).toLocaleString()}</span></div>
       </div>
+      <div class="card">
+        <h4 style="margin:0 0 12px;font-size:14px">Version History</h4>
+        <div id="version-list" style="font-size:13px;color:var(--muted)">Loading...</div>
+      </div>
     </div>
   </div>`;
 
-  // Status change: create proposal, let backend decide auto-approval
+  // ── Status change ──
   async function changeStatus(newStatus) {
     try {
       const prop = await api('/proposals', { method: 'POST', body: JSON.stringify({
         entityId: e.id,
         proposedChange: { action: newStatus === 'archived' ? 'delete' : 'update', data: { status: newStatus } }
       })});
-      if (prop.status === 'approved') {
-        toast(`Status changed to ${newStatus}`);
-        reload();
-      } else {
-        toast('Proposal created. Go to Proposals to approve it.', 'success');
-        refreshPendingCount();
-      }
+      if (prop.status === 'approved') { toast(`Status changed to ${newStatus}`); reload(); }
+      else { toast('Proposal created. Go to Review Queue to approve.', 'success'); refreshPendingCount(); }
     } catch (err) { toast(err.message, 'error'); }
   }
-
   const activateBtn = $('entity-activate');
   const archiveBtn = $('entity-archive');
   if (activateBtn) activateBtn.onclick = () => changeStatus('active');
   if (archiveBtn) archiveBtn.onclick = () => changeStatus('archived');
+
+  // ── Version History ──
+  try {
+    const versions = await api(`/entities/${entityId}/versions`);
+    const vList = $('version-list');
+    if (!versions.length) { vList.textContent = 'No versions'; }
+    else {
+      vList.innerHTML = versions.map((v, i) =>
+        `<div data-vid="${v.id}" style="padding:8px 10px;border-radius:6px;cursor:pointer;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center;transition:background 0.1s${i === 0 ? ';background:var(--bg)' : ''}" onmouseover="this.style.background='var(--bg)'" onmouseout="this.style.background='${i === 0 ? 'var(--bg)' : ''}'">
+          <div><strong>v${v.versionNumber}</strong>${i === 0 ? ' <span style="font-size:11px;color:var(--success)">current</span>' : ''}</div>
+          <span style="font-size:12px;color:var(--muted)">${new Date(v.createdAt).toLocaleDateString()}</span>
+        </div>`
+      ).join('');
+
+      vList.querySelectorAll('[data-vid]').forEach(item => {
+        item.onclick = () => {
+          const v = versions.find(x => x.id === item.dataset.vid);
+          if (!v) return;
+          const card = $('entity-main-card');
+          const snap = v.snapshot || {};
+          card.innerHTML = `
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+              <h3 style="margin:0">Version ${v.versionNumber} <span style="font-size:14px;color:var(--muted)">${new Date(v.createdAt).toLocaleString()}</span></h3>
+              <button class="btn btn-outline btn-sm" id="back-to-current">Back to Current</button>
+            </div>
+            <h4 style="margin:0 0 8px;font-size:14px;color:var(--muted)">Properties</h4>
+            <pre>${JSON.stringify(snap.properties || {}, null, 2)}</pre>
+            <h4 style="margin:16px 0 8px;font-size:14px;color:var(--muted)">Geometry</h4>
+            <pre>${snap.geometry ? JSON.stringify(snap.geometry, null, 2) : 'None'}</pre>`;
+          $('back-to-current').onclick = () => reload();
+        };
+      });
+    }
+  } catch (err) { $('version-list').textContent = 'Failed to load versions'; }
+
+  // ── Edit (Propose Changes) ──
+  const editBtn = $('entity-edit');
+  if (editBtn) {
+    editBtn.onclick = async () => {
+      try {
+        const schema = await api(`/definitions/models/${e.modelDefinitionId}/schema`);
+        const card = $('entity-main-card');
+
+        let formHtml = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+          <h3 style="margin:0">Edit ${e.properties?.name || e.type}</h3>
+          <button class="btn btn-outline btn-sm" id="ef-cancel">Cancel</button>
+        </div>`;
+
+        // Dynamic form fields
+        for (const f of schema.fields) {
+          formHtml += `<div class="form-group"><label>${f.label}${f.isRequired ? ' <span style="color:var(--danger)">*</span>' : ''}</label>`;
+          switch (f.fieldType) {
+            case 'string': formHtml += `<input id="ef-${f.key}" type="text">`; break;
+            case 'number':
+              const min = f.validation?.min !== undefined ? `min="${f.validation.min}"` : '';
+              const max = f.validation?.max !== undefined ? `max="${f.validation.max}"` : '';
+              formHtml += `<input id="ef-${f.key}" type="number" step="any" ${min} ${max}>`; break;
+            case 'boolean': formHtml += `<input id="ef-${f.key}" type="checkbox">`; break;
+            case 'date': formHtml += `<input id="ef-${f.key}" type="date">`; break;
+            case 'enum_': formHtml += `<select id="ef-${f.key}"><option value="">--</option>${(f.enumValues||[]).map(v=>`<option value="${v}">${v}</option>`).join('')}</select>`; break;
+            case 'json': formHtml += `<textarea id="ef-${f.key}" rows="3"></textarea>`; break;
+            case 'relation': formHtml += `<input id="ef-${f.key}" type="text" placeholder="Entity UUID">`; break;
+            default: formHtml += `<input id="ef-${f.key}" type="text">`;
+          }
+          formHtml += '</div>';
+        }
+
+        // Geometry
+        if (schema.geometryType !== 'NONE') {
+          if (schema.geometryType === 'POINT' || schema.geometryType === 'MIXED') {
+            formHtml += `<div class="form-row"><div class="form-group"><label>Longitude</label><input id="ef-geo-lon" type="number" step="any"></div><div class="form-group"><label>Latitude</label><input id="ef-geo-lat" type="number" step="any"></div></div>`;
+          } else {
+            formHtml += `<div class="form-group"><label>Geometry (GeoJSON)</label><textarea id="ef-geo-json" rows="4"></textarea></div>`;
+          }
+        }
+
+        formHtml += `<div style="margin-top:20px;display:flex;gap:8px"><button class="btn btn-primary" id="ef-submit">Submit Edit Proposal</button></div>`;
+        card.innerHTML = formHtml;
+
+        // Pre-fill values via JS (safe from XSS)
+        for (const f of schema.fields) {
+          const el = $(`ef-${f.key}`);
+          if (!el) continue;
+          const val = e.properties?.[f.key];
+          if (val === undefined || val === null) continue;
+          if (f.fieldType === 'boolean') el.checked = !!val;
+          else if (f.fieldType === 'json') el.value = JSON.stringify(val, null, 2);
+          else el.value = String(val);
+        }
+        // Pre-fill geometry
+        if (e.geometry?.coordinates) {
+          const lonEl = $('ef-geo-lon'), latEl = $('ef-geo-lat'), geoEl = $('ef-geo-json');
+          if (lonEl && e.geometry.type === 'Point') { lonEl.value = e.geometry.coordinates[0]; latEl.value = e.geometry.coordinates[1]; }
+          else if (geoEl) geoEl.value = JSON.stringify(e.geometry, null, 2);
+        }
+
+        $('ef-cancel').onclick = () => reload();
+        $('ef-submit').onclick = async () => {
+          try {
+            const properties = {};
+            for (const f of schema.fields) {
+              const el = $(`ef-${f.key}`);
+              if (!el) continue;
+              if (f.fieldType === 'boolean') { properties[f.key] = el.checked; }
+              else if (f.fieldType === 'number') { properties[f.key] = el.value !== '' ? parseFloat(el.value) : null; }
+              else if (f.fieldType === 'json') {
+                if (el.value) try { properties[f.key] = JSON.parse(el.value); } catch { toast('Invalid JSON in ' + f.key, 'error'); return; }
+                else properties[f.key] = null;
+              }
+              else { properties[f.key] = el.value || null; }
+            }
+            let geometry = null;
+            const lonEl = $('ef-geo-lon'), latEl = $('ef-geo-lat'), geoEl = $('ef-geo-json');
+            if (lonEl?.value && latEl?.value) geometry = { type: 'Point', coordinates: [parseFloat(lonEl.value), parseFloat(latEl.value)] };
+            else if (geoEl?.value) try { geometry = JSON.parse(geoEl.value); } catch { toast('Invalid GeoJSON', 'error'); return; }
+
+            const prop = await api('/proposals', { method: 'POST', body: JSON.stringify({
+              entityId: e.id,
+              proposedChange: { action: 'update', data: { type: e.type, properties, geometry } }
+            })});
+            if (prop.status === 'approved') { toast('Edit applied!'); reload(); }
+            else { toast('Edit proposal created. Go to Review Queue to approve.'); refreshPendingCount(); reload(); }
+          } catch (err) { toast(err.message, 'error'); }
+        };
+      } catch (err) { toast('Failed to load schema: ' + err.message, 'error'); }
+    };
+  }
 }
 
 // ─── New Record (Dynamic Form) ─────────────────────

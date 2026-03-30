@@ -25,6 +25,13 @@ export async function getEntity(id: string) {
   return getEntityWithGeometry(id);
 }
 
+export async function getEntityVersions(id: string) {
+  return prisma.entityVersion.findMany({
+    where: { entityId: id },
+    orderBy: { versionNumber: "desc" },
+  });
+}
+
 // Direct entity creation is intentionally NOT exposed.
 // Entities are created/modified through the proposal system.
 // This helper is used internally by the proposal approval flow.
