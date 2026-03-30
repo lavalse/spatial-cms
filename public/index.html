@@ -160,6 +160,7 @@
     <div class="sidebar-item" data-section="define" onclick="nav('define/governance')" data-nav="define/governance"><span>Governance</span></div>
 
     <div class="sidebar-section" data-section="manage">Manage</div>
+    <div class="sidebar-item" data-section="manage" onclick="nav('dashboard')" data-nav="dashboard"><span>Dashboard</span></div>
     <div class="sidebar-item" data-section="manage" onclick="nav('manage/records')" data-nav="manage/records"><span>All Records</span></div>
     <div id="sidebar-models" class="sidebar-sub"></div>
     <div class="sidebar-item" data-section="manage" onclick="nav('manage/review')" data-nav="manage/review">
@@ -263,12 +264,12 @@ function updateWorkflow() {
   const hash = location.hash.slice(1) || 'manage/records';
   document.querySelectorAll('.workflow-step').forEach(el => el.classList.remove('wf-active'));
   if (hash.startsWith('define/')) document.querySelector('.wf-define')?.classList.add('wf-active');
-  else if (hash.startsWith('manage/')) document.querySelector('.wf-manage')?.classList.add('wf-active');
+  else if (hash.startsWith('manage/') || hash === 'dashboard') document.querySelector('.wf-manage')?.classList.add('wf-active');
   else if (hash.startsWith('publish/')) document.querySelector('.wf-publish')?.classList.add('wf-active');
 }
 
 async function router() {
-  const hash = location.hash.slice(1) || 'manage/records';
+  const hash = location.hash.slice(1) || 'dashboard';
   const parts = hash.split('/');
 
   // Legacy redirects
@@ -292,7 +293,8 @@ async function router() {
 
   try {
     const route = parts.slice(0, 3).join('/');
-    if (route === 'define/models' && parts.length === 2) await viewModels(main);
+    if (hash === 'dashboard') await viewDashboard(main);
+    else if (route === 'define/models' && parts.length === 2) await viewModels(main);
     else if (parts[0] === 'define' && parts[1] === 'models' && parts[2]) await viewModelDetail(main, parts[2]);
     else if (route === 'define/governance') await viewGovernance(main);
     else if (route === 'manage/records' && parts.length === 2) await viewContentAll(main);
@@ -315,6 +317,100 @@ async function router() {
 }
 
 window.addEventListener('hashchange', router);
+
+// ─── Dashboard ─────────────────────────────────────
+async function viewDashboard(main) {
+  setBreadcrumb(['Dashboard']);
+  setActiveNav('dashboard');
+
+  // Fetch all data in parallel
+  const [models, entities, proposals, datasets, publications] = await Promise.all([
+    api('/definitions/models').catch(() => []),
+    api('/entities').catch(() => []),
+    api('/proposals').catch(() => []),
+    api('/datasets').catch(() => []),
+    api('/publications').catch(() => []),
+  ]);
+
+  const pending = proposals.filter(p => p.status === 'pending');
+  const active = entities.filter(e => e.status === 'active');
+  const recentProposals = proposals.slice(0, 8);
+
+  // Model record counts
+  const modelCounts = {};
+  entities.forEach(e => { modelCounts[e.type] = (modelCounts[e.type] || 0) + 1; });
+
+  main.innerHTML = `
+    <div class="page-header"><h2>Dashboard</h2></div>
+
+    <!-- Stats -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px">
+      <div class="card" style="text-align:center;cursor:pointer" onclick="nav('define/models')">
+        <div style="font-size:28px;font-weight:700;color:var(--primary)">${models.length}</div>
+        <div style="font-size:13px;color:var(--muted)">Models</div>
+      </div>
+      <div class="card" style="text-align:center;cursor:pointer" onclick="nav('manage/records')">
+        <div style="font-size:28px;font-weight:700;color:var(--text)">${entities.length}</div>
+        <div style="font-size:13px;color:var(--muted)">Records (${active.length} active)</div>
+      </div>
+      <div class="card" style="text-align:center;cursor:pointer" onclick="nav('manage/review')">
+        <div style="font-size:28px;font-weight:700;color:${pending.length > 0 ? 'var(--warning)' : 'var(--success)'}">${pending.length}</div>
+        <div style="font-size:13px;color:var(--muted)">Pending Review</div>
+      </div>
+      <div class="card" style="text-align:center;cursor:pointer" onclick="nav('publish/datasets')">
+        <div style="font-size:28px;font-weight:700;color:var(--success)">${publications.length}</div>
+        <div style="font-size:13px;color:var(--muted)">Publications</div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <!-- Records by model -->
+      <div class="card">
+        <h3>Records by Model</h3>
+        ${models.length ? models.map(m => {
+          const count = modelCounts[m.key] || 0;
+          return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
+            <div><span style="font-weight:500">${m.name}</span> <code style="font-size:12px;color:var(--muted)">${m.key}</code></div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="font-size:14px;font-weight:600">${count}</span>
+              <button class="btn btn-ghost btn-sm" onclick="nav('manage/records/${m.key}')">View</button>
+            </div>
+          </div>`;
+        }).join('') : '<div class="empty"><h4>No models yet</h4><p>Define your first model to get started.</p><button class="btn btn-primary" onclick="nav(\'define/models\')">Go to Models</button></div>'}
+      </div>
+
+      <!-- Recent activity -->
+      <div class="card">
+        <h3>Recent Activity</h3>
+        ${recentProposals.length ? recentProposals.map(p => {
+          const action = p.proposedChange.action;
+          const type = p.proposedChange.data?.type || '—';
+          const name = p.proposedChange.data?.properties?.name || '';
+          return `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px">
+            <div>
+              ${badge(p.status)}
+              <span style="margin-left:6px">${action}</span>
+              <code style="color:var(--muted)">${type}</code>
+              ${name ? `<span style="color:var(--text)">${name}</span>` : ''}
+            </div>
+            <span style="color:var(--muted)">${new Date(p.createdAt).toLocaleDateString()}</span>
+          </div>`;
+        }).join('') : '<p style="color:var(--muted)">No activity yet.</p>'}
+      </div>
+    </div>
+
+    ${pending.length > 0 ? `<div class="card" style="margin-top:16px;border-left:3px solid var(--warning)">
+      <h3 style="color:var(--warning)">Pending Review</h3>
+      <table><thead><tr><th>Action</th><th>Model</th><th>Name</th><th>Source</th><th></th></tr></thead>
+        <tbody>${pending.map(p => `<tr>
+          <td>${p.proposedChange.action}</td>
+          <td><code>${p.proposedChange.data?.type || '—'}</code></td>
+          <td>${p.proposedChange.data?.properties?.name || '—'}</td>
+          <td style="color:var(--muted)">${p.source}</td>
+          <td><button class="btn btn-primary btn-sm" onclick="nav('manage/review/${p.id}')">Review</button></td>
+        </tr>`).join('')}</tbody></table>
+    </div>` : ''}`;
+}
 
 // ─── Content: All Records ──────────────────────────
 async function viewContentAll(main) {
@@ -690,12 +786,64 @@ async function viewProposalDetail(main, proposalId) {
   setBreadcrumb(['Manage'], ['Review Queue', `nav('manage/review')`], ['Review']);
   setActiveNav('manage/review');
   const p = await api(`/proposals/${proposalId}`);
+  const change = p.proposedChange;
+  const isUpdate = change.action === 'update' || change.action === 'delete';
 
-  main.innerHTML = `<div class="page-header"><div><h2>Review Proposal</h2><div class="sub">${p.proposedChange.action} &middot; ${p.proposedChange.data?.type || 'unknown'} &middot; ${p.source}</div></div><div>${badge(p.status)}</div></div>
-    <div class="card">
+  // Fetch current entity for diff (if update/delete)
+  let currentEntity = null;
+  if (isUpdate && p.entityId) {
+    try { currentEntity = await api(`/entities/${p.entityId}`); } catch {}
+  }
+
+  let diffHtml = '';
+  if (isUpdate && currentEntity) {
+    // Side-by-side diff
+    const currentProps = currentEntity.properties || {};
+    const proposedProps = change.data.properties || {};
+    const allKeys = [...new Set([...Object.keys(currentProps), ...Object.keys(proposedProps)])];
+
+    let diffRows = allKeys.map(key => {
+      const cur = JSON.stringify(currentProps[key] ?? null);
+      const prop = JSON.stringify(proposedProps[key] ?? null);
+      const changed = cur !== prop;
+      return `<tr${changed ? ' style="background:#fefce8"' : ''}>
+        <td style="font-weight:600;width:120px">${key}</td>
+        <td style="font-family:monospace;font-size:13px">${cur}</td>
+        <td style="font-family:monospace;font-size:13px">${changed ? `<strong style="color:var(--primary)">${prop}</strong>` : prop}</td>
+      </tr>`;
+    }).join('');
+
+    // Status change
+    if (change.data.status && change.data.status !== currentEntity.status) {
+      diffRows += `<tr style="background:#fefce8"><td style="font-weight:600">status</td><td>${badge(currentEntity.status)}</td><td>${badge(change.data.status)}</td></tr>`;
+    }
+
+    diffHtml = `<div class="card">
+      <h3>Changes</h3>
+      <table><thead><tr><th>Field</th><th>Current</th><th>Proposed</th></tr></thead><tbody>${diffRows}</tbody></table>
+    </div>`;
+  } else {
+    // Create proposal — just show proposed data
+    diffHtml = `<div class="card">
       <h3>Proposed Data</h3>
-      <pre>${JSON.stringify(p.proposedChange.data, null, 2)}</pre>
+      <pre>${JSON.stringify(change.data, null, 2)}</pre>
+    </div>`;
+  }
+
+  main.innerHTML = `
+    <div class="page-header">
+      <div>
+        <h2>Review Proposal</h2>
+        <div class="sub">
+          ${badge(change.action === 'delete' ? 'archived' : change.action === 'create' ? 'pending' : 'draft')} ${change.action}
+          &middot; <code>${change.data?.type || currentEntity?.type || '—'}</code>
+          &middot; ${p.source}
+          ${currentEntity?.properties?.name ? `&middot; <strong>${currentEntity.properties.name}</strong>` : ''}
+        </div>
+      </div>
+      <div>${badge(p.status)}</div>
     </div>
+    ${diffHtml}
     ${p.status === 'pending' ? `<div style="display:flex;gap:8px">
       <button class="btn btn-success" id="approve-btn">Approve</button>
       <button class="btn btn-danger" id="reject-btn">Reject</button>
