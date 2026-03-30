@@ -157,7 +157,6 @@
 
     <div class="sidebar-section" data-section="define">Define</div>
     <div class="sidebar-item" data-section="define" onclick="nav('define/models')" data-nav="define/models"><span>Models & Fields</span></div>
-    <div class="sidebar-item" data-section="define" onclick="nav('define/governance')" data-nav="define/governance"><span>Governance</span></div>
 
     <div class="sidebar-section" data-section="manage">Manage</div>
     <div class="sidebar-item" data-section="manage" onclick="nav('dashboard')" data-nav="dashboard"><span>Dashboard</span></div>
@@ -170,7 +169,6 @@
 
     <div class="sidebar-section" data-section="publish">Publish</div>
     <div class="sidebar-item" data-section="publish" onclick="nav('publish/datasets')" data-nav="publish/datasets"><span>Datasets</span></div>
-    <div class="sidebar-item" data-section="publish" onclick="nav('publish/history')" data-nav="publish/history"><span>Publications</span></div>
 
     <div class="sidebar-spacer"></div>
     <div class="sidebar-section" data-section="developer">Developer</div>
@@ -432,22 +430,49 @@ async function viewContentAll(main) {
     return;
   }
 
-  const header = h('div', { className: 'page-header' });
-  header.append(h('div', {}, h('h2', {}, 'All Records'), h('div', { className: 'sub' }, `${entities.length} records`)));
-  main.append(header);
+  main.innerHTML = `<div class="page-header"><div><h2>All Records</h2><div class="sub">${entities.length} records</div></div></div>
+    <div style="display:flex;gap:12px;margin-bottom:16px">
+      <input id="rec-search" type="text" placeholder="Search by name..." style="flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px;outline:none" oninput="filterRecords()">
+      <select id="rec-filter-model" style="padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px" onchange="filterRecords()">
+        <option value="">All models</option>
+        ${modelCache.map(m => `<option value="${m.key}">${m.name}</option>`).join('')}
+      </select>
+      <select id="rec-filter-status" style="padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px" onchange="filterRecords()">
+        <option value="">All statuses</option>
+        <option value="active">Active</option>
+        <option value="draft">Draft</option>
+        <option value="archived">Archived</option>
+      </select>
+    </div>
+    <div id="rec-table"></div>`;
 
-  if (!entities.length) { main.append(h('div', { className: 'empty' }, h('h4', {}, 'No records yet'), h('p', {}, 'Create a model first, then add records through the content section.'))); return; }
+  if (!entities.length) { $('rec-table').innerHTML = '<div class="empty"><h4>No records yet</h4></div>'; return; }
 
-  const table = document.createElement('table');
-  table.innerHTML = `<thead><tr><th>Name</th><th>Model</th><th>Status</th><th>Created</th><th></th></tr></thead>
+  // Store entities for filtering
+  window._allEntities = entities;
+  filterRecords();
+}
+
+function filterRecords() {
+  const search = ($('rec-search')?.value || '').toLowerCase();
+  const modelFilter = $('rec-filter-model')?.value || '';
+  const statusFilter = $('rec-filter-status')?.value || '';
+  const entities = (window._allEntities || []).filter(e => {
+    if (search && !(e.properties?.name || '').toLowerCase().includes(search)) return false;
+    if (modelFilter && e.type !== modelFilter) return false;
+    if (statusFilter && e.status !== statusFilter) return false;
+    return true;
+  });
+  const container = $('rec-table');
+  if (!entities.length) { container.innerHTML = '<div class="empty" style="padding:24px"><p>No matching records.</p></div>'; return; }
+  container.innerHTML = `<table><thead><tr><th>Name</th><th>Model</th><th>Status</th><th>Created</th><th></th></tr></thead>
     <tbody>${entities.map(e => `<tr>
       <td>${e.properties?.name || '<em style="color:var(--muted)">Untitled</em>'}</td>
       <td><code style="font-size:12px">${e.type}</code></td>
       <td>${badge(e.status)}</td>
       <td style="color:var(--muted)">${new Date(e.createdAt).toLocaleDateString()}</td>
       <td><button class="btn btn-ghost btn-sm" onclick="nav('manage/records/${e.type}/${e.id}')">View</button></td>
-    </tr>`).join('')}</tbody>`;
-  main.append(table);
+    </tr>`).join('')}</tbody></table>`;
 }
 
 // ─── Content: By Model ─────────────────────────────
@@ -929,12 +954,37 @@ async function viewDatasetDetail(main, datasetId) {
           <td style="color:var(--muted)">${new Date(s.createdAt).toLocaleDateString()}</td>
           <td>${s.status === 'ready' ? `<button class="btn btn-primary btn-sm" data-publish="${s.id}">Publish</button>` : '—'}</td>
         </tr>`).join('')}</tbody></table>` : '<p style="color:var(--muted)">No snapshots yet.</p>'}
-    </div>`;
+    </div>
+
+    <div class="card"><h3>Publication History</h3><div id="ds-pub-history" style="color:var(--muted)">Loading...</div></div>`;
 
   $('gen-snap-btn').onclick = async () => { try { await api(`/datasets/${datasetId}/snapshot`, { method: 'POST' }); toast('Snapshot generated'); nav(`publish/datasets/${datasetId}`); } catch (err) { toast(err.message, 'error'); } };
   $('bind-btn').onclick = async () => { try { const mid = $('bind-select').value; if (!mid) return; await api(`/definitions/datasets/${datasetId}/bindings`, { method: 'POST', body: JSON.stringify({ modelDefinitionId: mid }) }); toast('Model bound'); nav(`publish/datasets/${datasetId}`); } catch (err) { toast(err.message, 'error'); } };
   main.querySelectorAll('[data-unbind]').forEach(btn => { btn.onclick = async () => { try { await api(`/definitions/datasets/${datasetId}/bindings/${btn.dataset.unbind}`, { method: 'DELETE' }); toast('Binding removed'); nav(`publish/datasets/${datasetId}`); } catch (err) { toast(err.message, 'error'); } }; });
   main.querySelectorAll('[data-publish]').forEach(btn => { btn.onclick = async () => { try { await api('/publications/publish', { method: 'POST', body: JSON.stringify({ datasetSnapshotId: btn.dataset.publish }) }); toast('Published!'); nav(`publish/datasets/${datasetId}`); } catch (err) { toast(err.message, 'error'); } }; });
+
+  // Load publication history for this dataset's snapshots
+  try {
+    const pubs = await api('/publications');
+    const snapshotIds = new Set((d.snapshots || []).map(s => s.id));
+    const dsPubs = pubs.filter(p => snapshotIds.has(p.datasetSnapshotId));
+    const el = $('ds-pub-history');
+    if (!dsPubs.length) { el.textContent = 'No publications yet.'; }
+    else {
+      const snapMap = {};
+      (d.snapshots || []).forEach(s => { snapMap[s.id] = s; });
+      el.innerHTML = `<table><thead><tr><th>Type</th><th>Version</th><th>Status</th><th>Created</th></tr></thead>
+        <tbody>${dsPubs.map(p => {
+          const snap = snapMap[p.datasetSnapshotId];
+          return `<tr>
+            <td>${badge(p.type === 'publish' ? 'published' : 'rejected')}</td>
+            <td>v${snap?.version ?? '?'}</td>
+            <td>${badge(p.status)}</td>
+            <td style="color:var(--muted)">${new Date(p.createdAt).toLocaleString()}</td>
+          </tr>`;
+        }).join('')}</tbody></table>`;
+    }
+  } catch { $('ds-pub-history').textContent = 'Failed to load.'; }
 }
 
 // ─── Publications ──────────────────────────────────
@@ -1377,14 +1427,26 @@ async function viewModels(main) {
   }, 0);
 
   if (models.length) {
+    // Fetch governance policies for all models in parallel
+    const policies = await Promise.all(models.map(m =>
+      api(`/definitions/governance/policies/model/${m.id}`).catch(() => null)
+    ));
+
     const t = document.createElement('table');
-    t.innerHTML = `<thead><tr><th>Key</th><th>Name</th><th>Geometry</th><th>Fields</th><th>Records</th><th></th></tr></thead>
-      <tbody>${models.map(m => `<tr>
-        <td><code>${m.key}</code></td><td>${m.name}</td>
-        <td><span class="badge badge-none">${m.geometryType}</span></td>
-        <td>${m.fields.length}</td><td>${m._count?.entities ?? 0}</td>
-        <td><button class="btn btn-ghost btn-sm" onclick="nav('define/models/${m.id}')">Design</button></td>
-      </tr>`).join('')}</tbody>`;
+    t.innerHTML = `<thead><tr><th>Key</th><th>Name</th><th>Geometry</th><th>Fields</th><th>Records</th><th>Approval</th><th>Publish</th><th></th></tr></thead>
+      <tbody>${models.map((m, i) => {
+        const pol = policies[i];
+        const approval = pol ? pol.approvalMode : 'manual';
+        const publish = pol ? pol.publishMode : 'manual';
+        return `<tr>
+          <td><code>${m.key}</code></td><td>${m.name}</td>
+          <td><span class="badge badge-none">${m.geometryType}</span></td>
+          <td>${m.fields.length}</td><td>${m._count?.entities ?? 0}</td>
+          <td><span style="font-size:12px;color:${approval === 'auto' ? 'var(--success)' : 'var(--muted)'}">${approval}</span></td>
+          <td><span style="font-size:12px;color:${publish === 'auto' ? 'var(--success)' : 'var(--muted)'}">${publish}</span></td>
+          <td><button class="btn btn-ghost btn-sm" onclick="nav('define/models/${m.id}')">Design</button></td>
+        </tr>`;
+      }).join('')}</tbody>`;
     main.append(t);
   }
 }
