@@ -169,6 +169,7 @@
 
     <div class="sidebar-section" data-section="publish">Publish</div>
     <div class="sidebar-item" data-section="publish" onclick="nav('publish/datasets')" data-nav="publish/datasets"><span>Datasets</span></div>
+    <div class="sidebar-item" data-section="publish" onclick="nav('publish/delivery')" data-nav="publish/delivery"><span>Delivery API</span></div>
 
     <div class="sidebar-spacer"></div>
     <div class="sidebar-section" data-section="developer">Developer</div>
@@ -304,6 +305,7 @@ async function router() {
     else if (route === 'publish/datasets' && parts.length === 2) await viewDatasets(main);
     else if (parts[0] === 'publish' && parts[1] === 'datasets' && parts[2]) await viewDatasetDetail(main, parts[2]);
     else if (route === 'publish/history') await viewPublications(main);
+    else if (route === 'publish/delivery') await viewDeliveryDocs(main);
     else if (route === 'dev/api') await viewApiPlayground(main);
     else if (route === 'dev/console') await viewPublishConsole(main);
     else await viewContentAll(main);
@@ -1066,6 +1068,95 @@ async function viewPublications(main) {
   main.append(t);
 }
 
+// ─── Delivery API Docs ─────────────────────────────
+async function viewDeliveryDocs(main) {
+  setBreadcrumb(['Publish'], ['Delivery API']);
+  setActiveNav('publish/delivery');
+
+  // Fetch live data for examples
+  const datasets = await api('/delivery/datasets').catch(() => []);
+  const baseUrl = window.location.origin + '/api/v1';
+
+  main.innerHTML = `
+    <div class="page-header"><div><h2>Delivery API</h2><div class="sub">Read-only API for external consumers. Only published data is exposed.</div></div></div>
+
+    <div class="card">
+      <h3>Overview</h3>
+      <p style="color:var(--muted);line-height:1.6;margin-bottom:16px">
+        The Delivery API provides read-only access to published datasets. External applications (maps, mobile apps, analytics)
+        use these endpoints to consume data. Unlike the Management API, consumers never see drafts, proposals, or internal workflow state.
+      </p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;font-size:14px">
+        <div style="padding:16px;background:var(--bg);border-radius:var(--radius)">
+          <div style="font-weight:600;margin-bottom:4px">Management API</div>
+          <div style="color:var(--muted);font-size:13px">Internal use — create, edit, approve, publish</div>
+          <code style="font-size:12px">/api/v1/entities, /proposals, /datasets...</code>
+        </div>
+        <div style="padding:16px;background:#f0fdf4;border-radius:var(--radius);border:1px solid #bbf7d0">
+          <div style="font-weight:600;color:var(--success);margin-bottom:4px">Delivery API</div>
+          <div style="color:var(--muted);font-size:13px">External use — read-only, published data only</div>
+          <code style="font-size:12px">/api/v1/delivery/datasets</code>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Endpoints</h3>
+
+      <div style="margin-bottom:24px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="font-size:12px;font-weight:700;color:var(--success);background:#dcfce7;padding:2px 8px;border-radius:4px">GET</span>
+          <code style="font-size:14px">/api/v1/delivery/datasets</code>
+        </div>
+        <p style="color:var(--muted);font-size:13px;margin-bottom:8px">List all published datasets. Only datasets with an active published snapshot are returned.</p>
+        <pre style="font-size:12px">curl ${baseUrl}/delivery/datasets</pre>
+      </div>
+
+      <div style="margin-bottom:24px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="font-size:12px;font-weight:700;color:var(--success);background:#dcfce7;padding:2px 8px;border-radius:4px">GET</span>
+          <code style="font-size:14px">/api/v1/delivery/datasets/:id</code>
+        </div>
+        <p style="color:var(--muted);font-size:13px;margin-bottom:8px">Get metadata for a published dataset: name, snapshot version, entity count, publish date.</p>
+        <pre style="font-size:12px">curl ${baseUrl}/delivery/datasets/{dataset-id}</pre>
+      </div>
+
+      <div style="margin-bottom:24px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="font-size:12px;font-weight:700;color:var(--success);background:#dcfce7;padding:2px 8px;border-radius:4px">GET</span>
+          <code style="font-size:14px">/api/v1/delivery/datasets/:id/entities</code>
+        </div>
+        <p style="color:var(--muted);font-size:13px;margin-bottom:8px">Get all entities in the published snapshot. Each entity includes type, properties, geometry (GeoJSON), and version number.</p>
+        <pre style="font-size:12px">curl ${baseUrl}/delivery/datasets/{dataset-id}/entities</pre>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Currently Published</h3>
+      ${datasets.length ? `<table><thead><tr><th>Dataset</th><th>Version</th><th>Entities</th><th>Published</th><th></th></tr></thead>
+        <tbody>${datasets.map(d => `<tr>
+          <td><strong>${d.name}</strong></td>
+          <td>v${d.snapshot.version}</td>
+          <td>${d.snapshot.entityCount}</td>
+          <td style="color:var(--muted)">${new Date(d.snapshot.publishedAt).toLocaleString()}</td>
+          <td><button class="btn btn-ghost btn-sm" onclick="window.open('${baseUrl}/delivery/datasets/${d.id}/entities','_blank')">View JSON</button></td>
+        </tr>`).join('')}</tbody></table>` : '<p style="color:var(--muted)">No datasets published yet. Publish a dataset snapshot first.</p>'}
+    </div>
+
+    <div class="card">
+      <h3>Integration Example</h3>
+      <pre style="font-size:13px">// Fetch published building data
+const response = await fetch('${baseUrl}/delivery/datasets/{DATASET_ID}/entities');
+const { dataset, entities } = await response.json();
+
+console.log(\`Dataset v\${dataset.snapshotVersion}: \${entities.length} entities\`);
+
+entities.forEach(entity => {
+  console.log(entity.properties.name, entity.geometry);
+});</pre>
+    </div>`;
+}
+
 // ─── Publish Console ───────────────────────────────
 let pcLog = [];
 function pcAddLog(action, detail, ok = true) {
@@ -1284,6 +1375,11 @@ const apiEndpoints = [
   { group: 'Ingestion', endpoints: [
     { method: 'POST', path: '/ingestion/import', desc: 'Bulk import entities', params: [{ key: 'body', where: 'body', hint: '{"entities":[{"type":"building","properties":{"name":"Test"}}]}' }] },
     { method: 'POST', path: '/ingestion/proposal-set', desc: 'Batch create proposals', params: [{ key: 'body', where: 'body', hint: '{"proposals":[{"proposedChange":{"action":"create","data":{"type":"building","properties":{"name":"Test"}}}}]}' }] },
+  ]},
+  { group: 'Delivery (Public)', endpoints: [
+    { method: 'GET', path: '/delivery/datasets', desc: 'List published datasets' },
+    { method: 'GET', path: '/delivery/datasets/:id', desc: 'Published dataset metadata', params: [{ key: 'id', hint: 'Dataset UUID', where: 'path', required: true }] },
+    { method: 'GET', path: '/delivery/datasets/:id/entities', desc: 'Entities in published snapshot', params: [{ key: 'id', hint: 'Dataset UUID', where: 'path', required: true }] },
   ]},
 ];
 
