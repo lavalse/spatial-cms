@@ -483,27 +483,44 @@ async function viewContentByModel(main, modelKey) {
   const model = modelCache.find(m => m.key === modelKey);
   const modelName = model?.name || modelKey;
 
-  main.innerHTML = '';
-  const header = h('div', { className: 'page-header' });
-  const info = h('div', {}, h('h2', {}, modelName), h('div', { className: 'sub' }, `${entities.length} records`));
-  const btn = h('button', { className: 'btn btn-primary', onclick: () => nav(`manage/new/${modelKey}`) }, `+ New ${modelName}`);
-  header.append(info, btn);
-  main.append(header);
+  main.innerHTML = `
+    <div class="page-header">
+      <div><h2>${modelName}</h2><div class="sub">${entities.length} records</div></div>
+      <button class="btn btn-primary" onclick="nav('manage/new/${modelKey}')">+ New ${modelName}</button>
+    </div>
+    ${entities.length ? `<div style="display:flex;gap:12px;margin-bottom:16px">
+      <input id="model-search" type="text" placeholder="Search by name..." style="flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px;outline:none" oninput="filterModelRecords('${modelKey}')">
+      <select id="model-filter-status" style="padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px" onchange="filterModelRecords('${modelKey}')">
+        <option value="">All statuses</option><option value="active">Active</option><option value="draft">Draft</option><option value="archived">Archived</option>
+      </select>
+    </div>` : ''}
+    <div id="model-rec-table"></div>`;
 
   if (!entities.length) {
-    main.append(h('div', { className: 'empty' }, h('h4', {}, `No ${modelName} records yet`), h('p', {}, 'Click the button above to create your first record.') ));
+    $('model-rec-table').innerHTML = `<div class="empty"><h4>No ${modelName} records yet</h4><p>Click the button above to create your first record.</p></div>`;
     return;
   }
+  window._modelEntities = entities;
+  filterModelRecords(modelKey);
+}
 
-  const table = document.createElement('table');
-  table.innerHTML = `<thead><tr><th>Name</th><th>Status</th><th>Created</th><th></th></tr></thead>
+function filterModelRecords(modelKey) {
+  const search = ($('model-search')?.value || '').toLowerCase();
+  const statusFilter = $('model-filter-status')?.value || '';
+  const entities = (window._modelEntities || []).filter(e => {
+    if (search && !(e.properties?.name || '').toLowerCase().includes(search)) return false;
+    if (statusFilter && e.status !== statusFilter) return false;
+    return true;
+  });
+  const container = $('model-rec-table');
+  if (!entities.length) { container.innerHTML = '<div class="empty" style="padding:24px"><p>No matching records.</p></div>'; return; }
+  container.innerHTML = `<table><thead><tr><th>Name</th><th>Status</th><th>Created</th><th></th></tr></thead>
     <tbody>${entities.map(e => `<tr>
       <td>${e.properties?.name || '<em style="color:var(--muted)">Untitled</em>'}</td>
       <td>${badge(e.status)}</td>
       <td style="color:var(--muted)">${new Date(e.createdAt).toLocaleDateString()}</td>
       <td><button class="btn btn-ghost btn-sm" onclick="nav('manage/records/${modelKey}/${e.id}')">View</button></td>
-    </tr>`).join('')}</tbody>`;
-  main.append(table);
+    </tr>`).join('')}</tbody></table>`;
 }
 
 // ─── Entity Detail ─────────────────────────────────
@@ -530,9 +547,9 @@ async function viewEntityDetail(main, entityId) {
           ${e.modelDefinitionId ? '<button class="btn btn-primary btn-sm" id="entity-edit">Edit</button>' : ''}
         </div>
         <h4 style="margin:0 0 8px;font-size:14px;color:var(--muted)">Properties</h4>
-        <pre>${JSON.stringify(e.properties, null, 2)}</pre>
+        <div id="entity-props-display"></div>
         <h4 style="margin:16px 0 8px;font-size:14px;color:var(--muted)">Geometry</h4>
-        <pre>${e.geometry ? JSON.stringify(e.geometry, null, 2) : 'None'}</pre>
+        ${e.geometry ? `<div style="font-size:13px;margin-bottom:4px"><span class="badge badge-none">${e.geometry.type}</span> <span style="color:var(--muted)">${e.geometry.type === 'Point' ? `[${e.geometry.coordinates[0]}, ${e.geometry.coordinates[1]}]` : ''}</span></div><pre style="max-height:200px;overflow:auto">${JSON.stringify(e.geometry, null, 2)}</pre>` : '<span style="color:var(--muted)">None</span>'}
       </div>
     </div>
     <div class="meta-sidebar">
@@ -549,6 +566,38 @@ async function viewEntityDetail(main, entityId) {
       </div>
     </div>
   </div>`;
+
+  // ── Render properties (structured if schema available) ──
+  const propsEl = $('entity-props-display');
+  if (e.modelDefinitionId) {
+    try {
+      const schema = await api(`/definitions/models/${e.modelDefinitionId}/schema`);
+      propsEl.innerHTML = schema.fields.map(f => {
+        const val = e.properties?.[f.key];
+        let display;
+        if (val === null || val === undefined) display = '<span style="color:var(--muted)">—</span>';
+        else if (f.fieldType === 'boolean') display = val ? '<span style="color:var(--success)">Yes</span>' : '<span style="color:var(--danger)">No</span>';
+        else if (f.fieldType === 'json') display = `<pre style="margin:0;font-size:12px">${JSON.stringify(val, null, 2)}</pre>`;
+        else if (f.fieldType === 'enum_') display = `<span class="badge badge-none">${val}</span>`;
+        else display = `<span>${val}</span>`;
+        return `<div style="display:flex;gap:8px;padding:10px 0;border-bottom:1px solid var(--border)">
+          <div style="min-width:140px;font-size:13px;color:var(--muted)">${f.label}</div>
+          <div style="font-size:14px">${display}</div>
+        </div>`;
+      }).join('');
+      // Show any extra properties not in schema
+      const schemaKeys = new Set(schema.fields.map(f => f.key));
+      const extraKeys = Object.keys(e.properties || {}).filter(k => !schemaKeys.has(k));
+      if (extraKeys.length) {
+        propsEl.innerHTML += `<div style="margin-top:8px;font-size:12px;color:var(--muted)">Other properties:</div>
+          <pre style="font-size:12px">${JSON.stringify(Object.fromEntries(extraKeys.map(k => [k, e.properties[k]])), null, 2)}</pre>`;
+      }
+    } catch {
+      propsEl.innerHTML = `<pre>${JSON.stringify(e.properties, null, 2)}</pre>`;
+    }
+  } else {
+    propsEl.innerHTML = `<pre>${JSON.stringify(e.properties, null, 2)}</pre>`;
+  }
 
   // ── Status change ──
   async function changeStatus(newStatus) {

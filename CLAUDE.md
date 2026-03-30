@@ -42,10 +42,12 @@ src/
     ingestion/                # Bulk import + batch proposal creation
     definition/               # Model/field/relation/binding/governance CRUD
 public/index.html             # Single-page admin UI (sidebar nav, hash router)
-                              #   Content: entity list by model, detail with status actions
-                              #   Proposals: pending review + history
-                              #   Datasets: manage bindings, snapshots, publish
-                              #   Model Designer: model/field CRUD + governance policy
+                              #   Dashboard: stats, records by model, recent activity, pending review
+                              #   Content: entity list by model, search/filter, detail with
+                              #     structured properties, version history, inline edit, status actions
+                              #   Proposals: pending review + history, diff view for updates
+                              #   Datasets: manage bindings, snapshots, publish, publication history
+                              #   Model Designer: model/field CRUD + governance policy columns
                               #   New Record: dynamic form from model schema → proposal
                               #   Publish Console: one-page publish workflow testing
                               #   API Playground: interactive endpoint explorer
@@ -88,6 +90,7 @@ Set per model via UI (Model Designer > model detail > Governance Policy) or API.
 ### Content
 - `GET/POST /api/v1/entities` — list (supports `?type=` filter)
 - `GET /api/v1/entities/:id` — detail with geometry
+- `GET /api/v1/entities/:id/versions` — version history
 
 ### Proposals
 - `POST /api/v1/proposals` — create (actions: create/update/delete)
@@ -119,12 +122,13 @@ Organized by product workflow: **Define → Manage → Publish**
 
 | Route | Section | Page |
 |-------|---------|------|
-| `#define/models` | Define | Model Designer list + create |
+| `#dashboard` | Manage | Dashboard: stats, activity, pending review |
+| `#define/models` | Define | Model Designer list + create + governance columns |
 | `#define/models/{id}` | Define | Fields, relations, governance policy |
 | `#define/governance` | Define | Governance policy overview for all models |
 | `#manage/records` | Manage | All records |
 | `#manage/records/{modelKey}` | Manage | Records filtered by model |
-| `#manage/records/{modelKey}/{id}` | Manage | Entity detail + status actions |
+| `#manage/records/{modelKey}/{id}` | Manage | Entity detail + structured props + version history + edit |
 | `#manage/new/{modelKey}` | Manage | Dynamic form → create proposal |
 | `#manage/review` | Manage | Review queue (pending + history) |
 | `#manage/review/{id}` | Manage | Proposal detail + approve/reject |
