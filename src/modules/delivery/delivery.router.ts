@@ -77,6 +77,21 @@ deliveryRouter.get("/datasets/:id", async (req, res, next) => {
   }
 });
 
+// GET /api/v1/delivery/datasets/:id/schema
+deliveryRouter.get("/datasets/:id/schema", async (req, res, next) => {
+  try {
+    const { id } = uuidParam.parse(req.params);
+    const schema = await deliveryService.getPublishedDatasetSchema(id);
+    if (!schema)
+      return res
+        .status(404)
+        .json({ error: "Dataset not published or not found" });
+    res.json(schema);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/v1/delivery/datasets/:id/entities
 deliveryRouter.get("/datasets/:id/entities", async (req, res, next) => {
   try {

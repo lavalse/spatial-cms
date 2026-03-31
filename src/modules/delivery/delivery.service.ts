@@ -4,6 +4,7 @@ import {
   findEntitiesInBBox,
   findEntitiesNearPoint,
 } from "../../shared/geometry.js";
+import { getModelSchema } from "../definition/definition.service.js";
 
 interface ManifestItem {
   entityId: string;
@@ -250,5 +251,49 @@ export async function getPublishedEntity(
     version: item.versionNumber,
     properties: (item.snapshot?.properties ?? {}) as Record<string, unknown>,
     geometry,
+  };
+}
+
+/** Get schema for all models bound to a published dataset */
+export async function getPublishedDatasetSchema(datasetDefinitionId: string) {
+  const release = await prisma.activeReleaseState.findUnique({
+    where: { datasetDefinitionId },
+    include: { datasetDefinition: true },
+  });
+  if (!release) return null;
+
+  // Get model bindings
+  const bindings = await prisma.datasetModelBinding.findMany({
+    where: { datasetDefinitionId },
+    include: { modelDefinition: true },
+  });
+
+  // Get schema for each bound model
+  const models = await Promise.all(
+    bindings.map(async (b) => {
+      const schema = await getModelSchema(b.modelDefinitionId);
+      return schema;
+    }),
+  );
+
+  // If no bindings, try legacy entityTypes → find models by key
+  if (!models.filter(Boolean).length) {
+    const entityTypes = (release.datasetDefinition.entityTypes as string[] | null) ?? [];
+    const legacyModels = await Promise.all(
+      entityTypes.map(async (key) => {
+        const model = await prisma.modelDefinition.findUnique({ where: { key } });
+        if (model) return getModelSchema(model.id);
+        return null;
+      }),
+    );
+    return {
+      dataset: release.datasetDefinition.name,
+      models: legacyModels.filter(Boolean),
+    };
+  }
+
+  return {
+    dataset: release.datasetDefinition.name,
+    models: models.filter(Boolean),
   };
 }

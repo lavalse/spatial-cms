@@ -118,6 +118,41 @@ ogcRouter.get("/collections/:id", async (req, res, next) => {
   }
 });
 
+// GET /api/v1/ogc/collections/:id/schema
+ogcRouter.get("/collections/:id/schema", async (req, res, next) => {
+  try {
+    const { id } = z.object({ id: z.string().uuid() }).parse(req.params);
+    const schema = await deliveryService.getPublishedDatasetSchema(id);
+    if (!schema)
+      return res.status(404).json({ error: "Collection not found" });
+
+    // OGC-style schema: list properties as JSON Schema-like format
+    const properties: Record<string, object> = {};
+    for (const model of schema.models as Array<{ key: string; fields: Array<{ key: string; label: string; fieldType: string; isRequired: boolean }> }>) {
+      for (const f of model.fields) {
+        const typeMap: Record<string, string> = { string: "string", number: "number", boolean: "boolean", date: "string", json: "object", enum_: "string", relation: "string" };
+        properties[f.key] = {
+          title: f.label,
+          type: typeMap[f.fieldType] || "string",
+          "x-ogc-role": f.isRequired ? "required" : "optional",
+        };
+      }
+    }
+
+    res.json({
+      type: "object",
+      title: schema.dataset,
+      properties: {
+        type: { type: "string", enum: ["Feature"] },
+        geometry: { type: "object" },
+        properties: { type: "object", properties },
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/v1/ogc/collections/:id/items
 ogcRouter.get("/collections/:id/items", async (req, res, next) => {
   try {
