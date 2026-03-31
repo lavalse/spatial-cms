@@ -173,9 +173,11 @@
 
     <div class="sidebar-spacer"></div>
     <div class="sidebar-section" data-section="integrate">Integrate</div>
-    <div class="sidebar-item" data-section="integrate" onclick="nav('integrate/ingestion')" data-nav="integrate/ingestion"><span>Ingestion API</span></div>
-    <div class="sidebar-item" data-section="integrate" onclick="nav('dev/api')" data-nav="dev/api"><span>API Explorer</span></div>
-    <div class="sidebar-item" data-section="integrate" onclick="nav('dev/console')" data-nav="dev/console"><span>Publish Console</span></div>
+    <div class="sidebar-item" data-section="integrate" onclick="nav('integrate/ingestion')" data-nav="integrate/ingestion"><span>Import API</span></div>
+
+    <div class="sidebar-section" data-section="integrate" style="opacity:0.5;font-size:9px">Dev Only</div>
+    <div class="sidebar-item" data-section="integrate" onclick="nav('dev/api')" data-nav="dev/api" style="opacity:0.5"><span>API Explorer</span></div>
+    <div class="sidebar-item" data-section="integrate" onclick="nav('dev/console')" data-nav="dev/console" style="opacity:0.5"><span>Publish Console</span></div>
   </aside>
 
   <div class="topbar">
@@ -1615,9 +1617,11 @@ async function viewPublishConsole(main) {
   setBreadcrumb(['Developer'], ['Publish Console']);
   setActiveNav('dev/console');
 
+  const devBanner = '<div style="padding:8px 16px;background:#fef3c7;border:1px solid #fde68a;border-radius:var(--radius);margin-bottom:16px;font-size:13px;color:#92400e">Dev only — This tool is for development and debugging. It will not be visible in production.</div>';
   const datasets = await api('/datasets');
 
   main.innerHTML = `
+    ${devBanner}
     <div class="page-header"><div><h2>Publish Console</h2><div class="sub">Test the full publish workflow in one place</div></div></div>
 
     <div class="card">
@@ -1829,10 +1833,11 @@ const apiEndpoints = [
 let apgHistory = [];
 
 async function viewApiPlayground(main) {
-  setBreadcrumb(['Developer'], ['API Playground']);
+  setBreadcrumb(['Developer'], ['API Explorer']);
   setActiveNav('dev/api');
 
   main.innerHTML = `
+    <div style="padding:8px 16px;background:#fef3c7;border:1px solid #fde68a;border-radius:var(--radius);margin-bottom:16px;font-size:13px;color:#92400e">Dev only — This tool is for development and debugging. It will not be visible in production.</div>
     <div class="page-header"><div><h2>API Playground</h2><div class="sub">Explore and test all API endpoints</div></div></div>
 
     <div style="display:grid;grid-template-columns:340px 1fr;gap:16px;height:calc(100vh - 160px)">
