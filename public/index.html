@@ -1164,6 +1164,14 @@ async function viewDeliveryDocs(main) {
       <div style="margin-bottom:24px">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
           <span style="font-size:12px;font-weight:700;color:var(--success);background:#dcfce7;padding:2px 8px;border-radius:4px">GET</span>
+          <code style="font-size:14px">/api/v1/delivery/datasets/:id/schema</code>
+        </div>
+        <p style="color:var(--muted);font-size:13px;margin-bottom:8px">Get model schemas for this dataset: field names, types, constraints, enum values. Use this to understand data structure before querying.</p>
+      </div>
+
+      <div style="margin-bottom:24px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="font-size:12px;font-weight:700;color:var(--success);background:#dcfce7;padding:2px 8px;border-radius:4px">GET</span>
           <code style="font-size:14px">/api/v1/delivery/datasets/:id/entities</code>
         </div>
         <p style="color:var(--muted);font-size:13px;margin-bottom:8px">Query entities in the published snapshot. Supports pagination, spatial queries, filtering, sorting, and GeoJSON output.</p>
@@ -1676,6 +1684,7 @@ async function viewOgcDocs(main) {
         <tr><td><code>GET /api/v1/ogc/conformance</code></td><td>Conformance declaration</td></tr>
         <tr><td><code>GET /api/v1/ogc/collections</code></td><td>List all published collections (datasets)</td></tr>
         <tr><td><code>GET /api/v1/ogc/collections/{id}</code></td><td>Collection metadata</td></tr>
+        <tr><td><code>GET /api/v1/ogc/collections/{id}/schema</code></td><td>Feature schema (JSON Schema format)</td></tr>
         <tr><td><code>GET /api/v1/ogc/collections/{id}/items</code></td><td>Features as GeoJSON FeatureCollection</td></tr>
         <tr><td><code>GET /api/v1/ogc/collections/{id}/items/{fid}</code></td><td>Single feature as GeoJSON Feature</td></tr>
       </tbody></table>
@@ -1960,7 +1969,18 @@ const apiEndpoints = [
   { group: 'Delivery (Public)', endpoints: [
     { method: 'GET', path: '/delivery/datasets', desc: 'List published datasets' },
     { method: 'GET', path: '/delivery/datasets/:id', desc: 'Published dataset metadata', params: [{ key: 'id', hint: 'Dataset UUID', where: 'path', required: true }] },
-    { method: 'GET', path: '/delivery/datasets/:id/entities', desc: 'Entities in published snapshot', params: [{ key: 'id', hint: 'Dataset UUID', where: 'path', required: true }] },
+    { method: 'GET', path: '/delivery/datasets/:id/schema', desc: 'Dataset model schemas', params: [{ key: 'id', hint: 'Dataset UUID', where: 'path', required: true }] },
+    { method: 'GET', path: '/delivery/datasets/:id/entities', desc: 'Entities (paginated, filterable)', params: [{ key: 'id', hint: 'Dataset UUID', where: 'path', required: true }, { key: 'pageSize', hint: '100', where: 'query' }, { key: 'page', hint: '1', where: 'query' }, { key: 'bbox', hint: '139,35,140,36', where: 'query' }, { key: 'format', hint: 'geojson', where: 'query' }] },
+    { method: 'GET', path: '/delivery/datasets/:id/entities/:entityId', desc: 'Single entity', params: [{ key: 'id', hint: 'Dataset UUID', where: 'path', required: true }, { key: 'entityId', hint: 'Entity UUID', where: 'path', required: true }] },
+  ]},
+  { group: 'OGC API - Features', endpoints: [
+    { method: 'GET', path: '/ogc/', desc: 'OGC landing page' },
+    { method: 'GET', path: '/ogc/conformance', desc: 'Conformance declaration' },
+    { method: 'GET', path: '/ogc/collections', desc: 'List collections' },
+    { method: 'GET', path: '/ogc/collections/:id', desc: 'Collection metadata', params: [{ key: 'id', hint: 'Collection UUID', where: 'path', required: true }] },
+    { method: 'GET', path: '/ogc/collections/:id/schema', desc: 'Feature schema (JSON Schema)', params: [{ key: 'id', hint: 'Collection UUID', where: 'path', required: true }] },
+    { method: 'GET', path: '/ogc/collections/:id/items', desc: 'Features (GeoJSON)', params: [{ key: 'id', hint: 'Collection UUID', where: 'path', required: true }, { key: 'limit', hint: '10', where: 'query' }, { key: 'offset', hint: '0', where: 'query' }, { key: 'bbox', hint: '139,35,140,36', where: 'query' }] },
+    { method: 'GET', path: '/ogc/collections/:id/items/:featureId', desc: 'Single feature', params: [{ key: 'id', hint: 'Collection UUID', where: 'path', required: true }, { key: 'featureId', hint: 'Feature UUID', where: 'path', required: true }] },
   ]},
 ];
 
