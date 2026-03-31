@@ -37,8 +37,14 @@ app.use("/api/v1/datasets", datasetRouter);
 app.use("/api/v1/publications", publicationRouter);
 app.use("/api/v1/ingestion", ingestionRouter);
 app.use("/api/v1/definitions", definitionRouter);
-app.use("/api/v1/delivery", deliveryRouter);
-app.use("/api/v1/ogc", ogcRouter);
+// Delivery + OGC: enable CORS for external consumers
+const corsHeaders = (_req: express.Request, res: express.Response, next: express.NextFunction) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Headers", "Content-Type");
+  next();
+};
+app.use("/api/v1/delivery", corsHeaders, deliveryRouter);
+app.use("/api/v1/ogc", corsHeaders, ogcRouter);
 
 // Global error handler
 app.use(

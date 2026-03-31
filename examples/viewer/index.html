@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spatial CMS Viewer — Taito-ku Buildings</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f8fafc; color: #1e293b; }
+
+    .app { display: grid; grid-template-columns: 380px 1fr; grid-template-rows: 56px 1fr; height: 100vh; }
+    .topbar { grid-column: 1 / -1; background: #0f172a; color: #fff; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; }
+    .topbar h1 { font-size: 16px; font-weight: 600; }
+    .topbar .api-badge { font-size: 11px; background: rgba(34,197,94,0.2); color: #4ade80; padding: 3px 10px; border-radius: 12px; }
+
+    .sidebar { overflow-y: auto; background: #fff; border-right: 1px solid #e2e8f0; display: flex; flex-direction: column; }
+    .search-bar { padding: 12px; border-bottom: 1px solid #e2e8f0; }
+    .search-bar input { width: 100%; padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 14px; outline: none; }
+    .search-bar input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.1); }
+    .filters { padding: 8px 12px; display: flex; gap: 6px; flex-wrap: wrap; border-bottom: 1px solid #e2e8f0; }
+    .filter-chip { padding: 4px 10px; border-radius: 12px; font-size: 12px; border: 1px solid #e2e8f0; cursor: pointer; background: #fff; }
+    .filter-chip.active { background: #3b82f6; color: #fff; border-color: #3b82f6; }
+    .stats { padding: 10px 12px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; font-size: 12px; color: #64748b; display: flex; gap: 16px; }
+    .stats strong { color: #1e293b; }
+
+    .list { flex: 1; overflow-y: auto; }
+    .list-item { padding: 12px; border-bottom: 1px solid #f1f5f9; cursor: pointer; transition: background 0.1s; }
+    .list-item:hover { background: #f8fafc; }
+    .list-item.active { background: #eff6ff; border-left: 3px solid #3b82f6; }
+    .list-item .li-name { font-weight: 600; font-size: 14px; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .list-item .li-meta { font-size: 12px; color: #94a3b8; }
+    .list-item .li-type { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 11px; background: #f1f5f9; color: #64748b; }
+
+    #map { min-height: 0; }
+    .detail-popup h3 { font-size: 15px; margin-bottom: 8px; }
+    .detail-popup .dp-row { display: flex; gap: 6px; font-size: 13px; margin-bottom: 4px; }
+    .detail-popup .dp-label { color: #94a3b8; min-width: 80px; }
+
+    .loading { padding: 40px; text-align: center; color: #94a3b8; }
+    .analysis { padding: 12px; border-top: 1px solid #e2e8f0; background: #f8fafc; }
+    .analysis h4 { font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+    .bar-chart .bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 12px; }
+    .bar-chart .bar-label { min-width: 80px; text-align: right; color: #64748b; }
+    .bar-chart .bar-fill { height: 16px; border-radius: 3px; background: #3b82f6; transition: width 0.3s; }
+    .bar-chart .bar-count { color: #94a3b8; min-width: 30px; }
+
+    @media (max-width: 768px) {
+      .app { grid-template-columns: 1fr; grid-template-rows: 56px 40vh 1fr; }
+      .sidebar { grid-row: 3; }
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <h1>Taito-ku Building Viewer</h1>
+    <span class="api-badge">Powered by Delivery API</span>
+  </div>
+  <div class="sidebar">
+    <div class="search-bar"><input id="search" type="text" placeholder="Search buildings..."></div>
+    <div class="filters" id="filters"></div>
+    <div class="stats" id="stats"><span>Loading...</span></div>
+    <div class="list" id="list"><div class="loading">Loading buildings...</div></div>
+    <div class="analysis" id="analysis"></div>
+  </div>
+  <div id="map"></div>
+</div>
+
+<script>
+// ─── Config ───
+const CMS_URL = 'http://localhost:3001/api/v1';
+let DATASET_ID = '';
+let allEntities = [];
+let filteredEntities = [];
+let activeType = '';
+let geoJsonLayer = null;
+let selectedId = null;
+
+// ─── Map Setup ───
+const map = L.map('map').setView([35.715, 139.783], 15);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '&copy; OpenStreetMap contributors',
+  maxZoom: 19,
+}).addTo(map);
+
+// ─── API ───
+async function apiGet(path) {
+  const res = await fetch(`${CMS_URL}${path}`);
+  return res.json();
+}
+
+// ─── Init ───
+async function init() {
+  // Discover datasets
+  const datasets = await apiGet('/delivery/datasets');
+  if (!datasets.length) { document.getElementById('list').innerHTML = '<div class="loading">No published datasets found.</div>'; return; }
+  DATASET_ID = datasets[0].id;
+
+  // Load schema
+  const schema = await apiGet(`/delivery/datasets/${DATASET_ID}/schema`);
+  document.title = `${datasets[0].name} — Spatial CMS Viewer`;
+  document.querySelector('.topbar h1').textContent = datasets[0].name;
+
+  // Load all entities (paginated)
+  document.getElementById('list').innerHTML = '<div class="loading">Loading data...</div>';
+  let page = 1;
+  allEntities = [];
+  while (true) {
+    const result = await apiGet(`/delivery/datasets/${DATASET_ID}/entities?page=${page}&pageSize=500`);
+    allEntities.push(...result.entities);
+    if (allEntities.length >= result.pagination.total) break;
+    page++;
+  }
+
+  // Build type filters from data
+  const typeCounts = {};
+  allEntities.forEach(e => {
+    const t = e.properties.building_type || 'unknown';
+    typeCounts[t] = (typeCounts[t] || 0) + 1;
+  });
+  const sortedTypes = Object.entries(typeCounts).sort((a, b) => b[1] - a[1]);
+
+  const filtersEl = document.getElementById('filters');
+  filtersEl.innerHTML = `<span class="filter-chip active" data-type="">All (${allEntities.length})</span>` +
+    sortedTypes.slice(0, 8).map(([t, c]) => `<span class="filter-chip" data-type="${t}">${t} (${c})</span>`).join('');
+
+  filtersEl.querySelectorAll('.filter-chip').forEach(chip => {
+    chip.onclick = () => {
+      filtersEl.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      activeType = chip.dataset.type;
+      applyFilters();
+    };
+  });
+
+  // Search
+  document.getElementById('search').oninput = () => applyFilters();
+
+  // Build analysis
+  buildAnalysis(typeCounts, sortedTypes);
+
+  // Initial render
+  applyFilters();
+
+  // Load on map move
+  map.on('moveend', () => renderMap());
+}
+
+function applyFilters() {
+  const search = document.getElementById('search').value.toLowerCase();
+  filteredEntities = allEntities.filter(e => {
+    if (activeType && (e.properties.building_type || 'unknown') !== activeType) return false;
+    if (search && !(e.properties.name || '').toLowerCase().includes(search)) return false;
+    return true;
+  });
+
+  document.getElementById('stats').innerHTML = `<span><strong>${filteredEntities.length}</strong> of ${allEntities.length} buildings</span>`;
+  renderList();
+  renderMap();
+}
+
+function renderList() {
+  const listEl = document.getElementById('list');
+  const visible = filteredEntities.slice(0, 200); // Cap list at 200
+  listEl.innerHTML = visible.map(e => `
+    <div class="list-item${selectedId === e.id ? ' active' : ''}" data-id="${e.id}">
+      <div class="li-name">${e.properties.name || 'Unnamed'}</div>
+      <div class="li-meta">
+        <span class="li-type">${e.properties.building_type || '?'}</span>
+        ${e.properties.height ? ` ${e.properties.height}m` : ''}
+        ${e.properties.levels ? ` ${e.properties.levels}F` : ''}
+        ${e.properties.addr_full ? ` · ${e.properties.addr_full}` : ''}
+      </div>
+    </div>
+  `).join('') + (filteredEntities.length > 200 ? `<div class="loading">Showing 200 of ${filteredEntities.length}. Zoom in or search to narrow.</div>` : '');
+
+  listEl.querySelectorAll('.list-item').forEach(item => {
+    item.onclick = () => {
+      selectedId = item.dataset.id;
+      const entity = allEntities.find(e => e.id === selectedId);
+      if (entity) selectEntity(entity);
+      renderList();
+    };
+  });
+}
+
+function renderMap() {
+  if (geoJsonLayer) map.removeLayer(geoJsonLayer);
+
+  const bounds = map.getBounds();
+  const visible = filteredEntities.filter(e => {
+    if (!e.geometry) return false;
+    // Quick check: use first coordinate of polygon
+    const coords = e.geometry.coordinates?.[0]?.[0];
+    if (!coords) return false;
+    return coords[0] >= bounds.getWest() && coords[0] <= bounds.getEast() &&
+           coords[1] >= bounds.getSouth() && coords[1] <= bounds.getNorth();
+  });
+
+  const fc = {
+    type: 'FeatureCollection',
+    features: visible.slice(0, 500).map(e => ({
+      type: 'Feature',
+      id: e.id,
+      properties: e.properties,
+      geometry: e.geometry,
+    })),
+  };
+
+  geoJsonLayer = L.geoJSON(fc, {
+    style: (feature) => {
+      const isSelected = feature.id === selectedId;
+      return {
+        color: isSelected ? '#ef4444' : '#3b82f6',
+        weight: isSelected ? 3 : 1,
+        fillColor: isSelected ? '#fecaca' : '#93c5fd',
+        fillOpacity: isSelected ? 0.6 : 0.3,
+      };
+    },
+    onEachFeature: (feature, layer) => {
+      layer.on('click', () => {
+        selectedId = feature.id;
+        const entity = allEntities.find(e => e.id === feature.id);
+        if (entity) selectEntity(entity);
+        renderList();
+        renderMap();
+      });
+    },
+  }).addTo(map);
+}
+
+function selectEntity(e) {
+  const props = e.properties;
+  const popup = L.popup({ maxWidth: 300 }).setContent(`
+    <div class="detail-popup">
+      <h3>${props.name || 'Unnamed Building'}</h3>
+      ${props.building_type ? `<div class="dp-row"><span class="dp-label">Type</span><span>${props.building_type}</span></div>` : ''}
+      ${props.height ? `<div class="dp-row"><span class="dp-label">Height</span><span>${props.height}m</span></div>` : ''}
+      ${props.levels ? `<div class="dp-row"><span class="dp-label">Floors</span><span>${props.levels}</span></div>` : ''}
+      ${props.addr_full ? `<div class="dp-row"><span class="dp-label">Address</span><span>${props.addr_full}</span></div>` : ''}
+      ${props.addr_housenumber ? `<div class="dp-row"><span class="dp-label">Number</span><span>${props.addr_housenumber}</span></div>` : ''}
+      ${props.addr_postcode ? `<div class="dp-row"><span class="dp-label">Postal</span><span>${props.addr_postcode}</span></div>` : ''}
+      <div class="dp-row" style="margin-top:8px;font-size:11px;color:#94a3b8">v${e.version} · ${e.id.substring(0,8)}...</div>
+    </div>
+  `);
+
+  // Center on entity
+  if (e.geometry?.coordinates?.[0]) {
+    const coords = e.geometry.coordinates[0];
+    const lats = coords.map(c => c[1]);
+    const lons = coords.map(c => c[0]);
+    const center = [(Math.min(...lats) + Math.max(...lats)) / 2, (Math.min(...lons) + Math.max(...lons)) / 2];
+    popup.setLatLng(center).openOn(map);
+  }
+}
+
+function buildAnalysis(typeCounts, sortedTypes) {
+  const maxCount = sortedTypes[0]?.[1] || 1;
+  const heights = allEntities.filter(e => e.properties.height).map(e => e.properties.height);
+  const avgHeight = heights.length ? (heights.reduce((a, b) => a + b, 0) / heights.length).toFixed(1) : 'N/A';
+  const maxHeight = heights.length ? Math.max(...heights) : 'N/A';
+  const withName = allEntities.filter(e => e.properties.name && !e.properties.name.includes('OSM')).length;
+
+  document.getElementById('analysis').innerHTML = `
+    <h4>Data Analysis</h4>
+    <div style="font-size:12px;color:#64748b;margin-bottom:8px">
+      Named: <strong>${withName}</strong> · With height: <strong>${heights.length}</strong> · Avg: <strong>${avgHeight}m</strong> · Max: <strong>${maxHeight}m</strong>
+    </div>
+    <div class="bar-chart">
+      ${sortedTypes.slice(0, 6).map(([t, c]) => `
+        <div class="bar-row">
+          <span class="bar-label">${t}</span>
+          <div class="bar-fill" style="width:${Math.round(c / maxCount * 120)}px"></div>
+          <span class="bar-count">${c}</span>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+init().catch(err => {
+  document.getElementById('list').innerHTML = `<div class="loading" style="color:#ef4444">Error: ${err.message}<br><br>Make sure Spatial CMS is running at ${CMS_URL}</div>`;
+});
+</script>
+</body>
+</html>
