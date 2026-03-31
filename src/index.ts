@@ -12,6 +12,7 @@ import { publicationRouter } from "./modules/publication/publication.router.js";
 import { ingestionRouter } from "./modules/ingestion/ingestion.router.js";
 import { definitionRouter } from "./modules/definition/definition.router.js";
 import { deliveryRouter } from "./modules/delivery/delivery.router.js";
+import { ogcRouter } from "./modules/delivery/ogc.router.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -37,6 +38,7 @@ app.use("/api/v1/publications", publicationRouter);
 app.use("/api/v1/ingestion", ingestionRouter);
 app.use("/api/v1/definitions", definitionRouter);
 app.use("/api/v1/delivery", deliveryRouter);
+app.use("/api/v1/ogc", ogcRouter);
 
 // Global error handler
 app.use(

@@ -170,6 +170,7 @@
     <div class="sidebar-section" data-section="publish">Publish</div>
     <div class="sidebar-item" data-section="publish" onclick="nav('publish/datasets')" data-nav="publish/datasets"><span>Datasets</span></div>
     <div class="sidebar-item" data-section="publish" onclick="nav('publish/delivery')" data-nav="publish/delivery"><span>Delivery API</span></div>
+    <div class="sidebar-item" data-section="publish" onclick="nav('publish/ogc')" data-nav="publish/ogc"><span>OGC Services</span></div>
 
     <div class="sidebar-spacer"></div>
     <div class="sidebar-section" data-section="integrate">Integrate</div>
@@ -309,6 +310,7 @@ async function router() {
     else if (parts[0] === 'publish' && parts[1] === 'datasets' && parts[2]) await viewDatasetDetail(main, parts[2]);
     else if (route === 'publish/history') await viewPublications(main);
     else if (route === 'publish/delivery') await viewDeliveryDocs(main);
+    else if (route === 'publish/ogc') await viewOgcDocs(main);
     else if (route === 'integrate/ingestion') await viewIngestionDocs(main);
     else if (route === 'dev/api') await viewApiPlayground(main);
     else if (route === 'dev/console') await viewPublishConsole(main);
@@ -1635,6 +1637,103 @@ cat buildings.geojson | jq '{
       resultEl.innerHTML = `<div style="padding:12px;background:#fee2e2;border-radius:var(--radius);border:1px solid #fecaca"><strong style="color:var(--danger)">Error:</strong> ${err.message}</div>`;
     }
   };
+}
+
+// ─── OGC Services Docs ─────────────────────────────
+async function viewOgcDocs(main) {
+  setBreadcrumb(['Publish'], ['OGC Services']);
+  setActiveNav('publish/ogc');
+
+  const baseUrl = window.location.origin + '/api/v1/ogc';
+  const datasets = await api('/delivery/datasets').catch(() => []);
+
+  main.innerHTML = `
+    <div class="page-header"><div><h2>OGC Services</h2><div class="sub">OGC API - Features compliant endpoints for GIS tools</div></div></div>
+
+    <div class="card">
+      <h3>What is OGC API - Features?</h3>
+      <p style="color:var(--muted);line-height:1.6;margin-bottom:16px">
+        OGC API - Features is the modern standard for serving spatial data over the web, replacing the legacy WFS protocol.
+        GIS tools like QGIS, ArcGIS, and MapServer can connect directly to these endpoints without any custom code.
+      </p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;font-size:14px">
+        <div style="padding:16px;background:var(--bg);border-radius:var(--radius)">
+          <div style="font-weight:600;margin-bottom:4px">Delivery API</div>
+          <div style="color:var(--muted);font-size:13px">For Web/App developers. Custom format, flexible queries.</div>
+        </div>
+        <div style="padding:16px;background:#eff6ff;border-radius:var(--radius);border:1px solid #bfdbfe">
+          <div style="font-weight:600;color:#1e40af;margin-bottom:4px">OGC API - Features</div>
+          <div style="color:var(--muted);font-size:13px">For GIS professionals. Standard format, tool-compatible.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Endpoints</h3>
+      <table style="box-shadow:none"><thead><tr><th>Endpoint</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>GET /api/v1/ogc/</code></td><td>Landing page — API description and links</td></tr>
+        <tr><td><code>GET /api/v1/ogc/conformance</code></td><td>Conformance declaration</td></tr>
+        <tr><td><code>GET /api/v1/ogc/collections</code></td><td>List all published collections (datasets)</td></tr>
+        <tr><td><code>GET /api/v1/ogc/collections/{id}</code></td><td>Collection metadata</td></tr>
+        <tr><td><code>GET /api/v1/ogc/collections/{id}/items</code></td><td>Features as GeoJSON FeatureCollection</td></tr>
+        <tr><td><code>GET /api/v1/ogc/collections/{id}/items/{fid}</code></td><td>Single feature as GeoJSON Feature</td></tr>
+      </tbody></table>
+
+      <div style="margin-top:16px;font-size:13px">
+        <div style="font-weight:600;margin-bottom:8px">Query parameters for <code>/items</code>:</div>
+        <table style="box-shadow:none"><thead><tr><th>Param</th><th>Example</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>limit</code></td><td><code>10</code></td><td>Max features per page (default: 10, max: 1000)</td></tr>
+          <tr><td><code>offset</code></td><td><code>0</code></td><td>Skip N features</td></tr>
+          <tr><td><code>bbox</code></td><td><code>139,35,140,36</code></td><td>Bounding box filter</td></tr>
+        </tbody></table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Connect from QGIS</h3>
+      <div style="color:var(--muted);font-size:14px;line-height:1.8">
+        <p><strong>1.</strong> Open QGIS &rarr; Layer &rarr; Add Layer &rarr; Add WFS / OGC API - Features Layer</p>
+        <p><strong>2.</strong> Click "New" to create a new connection</p>
+        <p><strong>3.</strong> Enter the URL:</p>
+        <pre style="font-size:13px;margin:8px 0">${baseUrl}/</pre>
+        <p><strong>4.</strong> Click "Connect" &rarr; select a collection &rarr; "Add"</p>
+        <p>The data will appear as a vector layer in QGIS with full geometry and attributes.</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Published Collections</h3>
+      ${datasets.length ? datasets.map(d => `
+        <div style="border:1px solid var(--border);border-radius:var(--radius);margin-bottom:8px;padding:14px 16px;display:flex;align-items:center;justify-content:space-between">
+          <div>
+            <strong>${d.name}</strong>
+            <span style="font-size:12px;color:var(--muted);margin-left:8px">v${d.snapshot.version} &middot; ${d.snapshot.entityCount} features</span>
+          </div>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-outline btn-sm" onclick="window.open('${baseUrl}/collections/${d.id}/items?limit=10','_blank')">Preview</button>
+          </div>
+        </div>`).join('') : '<p style="color:var(--muted)">No published collections. Publish a dataset first.</p>'}
+    </div>
+
+    <div class="card">
+      <h3>curl Examples</h3>
+      <pre style="font-size:12px"># Landing page
+curl ${baseUrl}/
+
+# List collections
+curl ${baseUrl}/collections
+
+# Get features (paginated)
+curl "${baseUrl}/collections/{COLLECTION_ID}/items?limit=10&offset=0"
+
+# Spatial query
+curl "${baseUrl}/collections/{COLLECTION_ID}/items?bbox=139,35,140,36"
+
+# Single feature
+curl ${baseUrl}/collections/{COLLECTION_ID}/items/{FEATURE_ID}</pre>
+    </div>`;
 }
 
 // ─── Publish Console ───────────────────────────────
