@@ -1,5 +1,27 @@
 import prisma from "../../db/client.js";
-import { getEntityWithGeometry } from "../../shared/geometry.js";
+import {
+  getEntityWithGeometry,
+  findEntitiesInBBox,
+  findEntitiesNearPoint,
+} from "../../shared/geometry.js";
+
+interface ManifestItem {
+  entityId: string;
+  type: string;
+  modelDefinitionId: string;
+  versionNumber: number;
+  snapshot: { properties?: Record<string, unknown>; geometry?: object } | null;
+}
+
+interface QueryOptions {
+  page?: number;
+  pageSize?: number;
+  bbox?: [number, number, number, number];
+  near?: { lon: number; lat: number; radius: number };
+  filter?: Record<string, Record<string, string> | string>;
+  sort?: { field: string; order: "asc" | "desc" };
+  format?: "json" | "geojson";
+}
 
 /** List all datasets that have an active published release */
 export async function listPublishedDatasets() {
@@ -36,13 +58,7 @@ export async function getPublishedDataset(datasetDefinitionId: string) {
 
   if (!release) return null;
 
-  const manifest = release.activeSnapshot.manifest as Array<{
-    entityId: string;
-    type: string;
-    modelDefinitionId: string;
-    versionNumber: number;
-    snapshot: { properties?: object; geometry?: object } | null;
-  }>;
+  const manifest = release.activeSnapshot.manifest as ManifestItem[];
 
   return {
     id: release.datasetDefinitionId,
@@ -56,8 +72,159 @@ export async function getPublishedDataset(datasetDefinitionId: string) {
   };
 }
 
-/** Get all entities in a published dataset's active snapshot, with geometry */
-export async function getPublishedEntities(datasetDefinitionId: string) {
+/** Get entities with filtering, pagination, spatial queries, and format options */
+export async function getPublishedEntities(
+  datasetDefinitionId: string,
+  options: QueryOptions = {},
+) {
+  const release = await prisma.activeReleaseState.findUnique({
+    where: { datasetDefinitionId },
+    include: {
+      datasetDefinition: true,
+      activeSnapshot: true,
+    },
+  });
+
+  if (!release) return null;
+
+  const {
+    page = 1,
+    pageSize = 100,
+    bbox,
+    near,
+    filter,
+    sort,
+    format = "json",
+  } = options;
+  const clampedPageSize = Math.min(Math.max(pageSize, 1), 1000);
+
+  let manifest = release.activeSnapshot.manifest as ManifestItem[];
+
+  // Step 1: Spatial filtering (bbox or near point)
+  if (bbox || near) {
+    let spatialIds: Set<string>;
+    if (bbox) {
+      const ids = await findEntitiesInBBox(bbox);
+      spatialIds = new Set(ids);
+    } else {
+      const ids = await findEntitiesNearPoint(near!.lon, near!.lat, near!.radius);
+      spatialIds = new Set(ids);
+    }
+    // Intersect with manifest
+    manifest = manifest.filter((item) => spatialIds.has(item.entityId));
+  }
+
+  // Step 2: Property filtering
+  if (filter) {
+    manifest = manifest.filter((item) => {
+      const props = (item.snapshot?.properties ?? {}) as Record<string, unknown>;
+      for (const [key, condition] of Object.entries(filter)) {
+        const value = props[key];
+        if (typeof condition === "string") {
+          // Exact match: ?filter[name]=Tokyo Tower
+          if (String(value) !== condition) return false;
+        } else if (typeof condition === "object") {
+          // Operator match: ?filter[height][$gte]=100
+          for (const [op, target] of Object.entries(condition)) {
+            const numTarget = Number(target);
+            const numValue = Number(value);
+            if (op === "$gte" && numValue < numTarget) return false;
+            if (op === "$lte" && numValue > numTarget) return false;
+            if (op === "$gt" && numValue <= numTarget) return false;
+            if (op === "$lt" && numValue >= numTarget) return false;
+            if (op === "$ne" && String(value) === target) return false;
+          }
+        }
+      }
+      return true;
+    });
+  }
+
+  // Step 3: Sort
+  if (sort) {
+    manifest.sort((a, b) => {
+      const aVal = (a.snapshot?.properties as Record<string, unknown>)?.[sort.field];
+      const bVal = (b.snapshot?.properties as Record<string, unknown>)?.[sort.field];
+      const cmp = aVal == null ? 1 : bVal == null ? -1 : aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
+      return sort.order === "desc" ? -cmp : cmp;
+    });
+  }
+
+  // Step 4: Pagination
+  const total = manifest.length;
+  const totalPages = Math.ceil(total / clampedPageSize);
+  const offset = (page - 1) * clampedPageSize;
+  const pageItems = manifest.slice(offset, offset + clampedPageSize);
+
+  // Step 5: Fetch geometry for current page only
+  const entities = await Promise.all(
+    pageItems.map(async (item) => {
+      let geometry = null;
+      try {
+        const fresh = await getEntityWithGeometry(item.entityId);
+        geometry = fresh?.geometry ?? null;
+      } catch (err) {
+        console.warn(
+          `[Delivery] Failed to fetch geometry for entity ${item.entityId}:`,
+          err instanceof Error ? err.message : err,
+        );
+        geometry = (item.snapshot?.geometry as object) ?? null;
+      }
+
+      return {
+        id: item.entityId,
+        type: item.type,
+        version: item.versionNumber,
+        properties: (item.snapshot?.properties ?? {}) as Record<string, unknown>,
+        geometry,
+      };
+    }),
+  );
+
+  const datasetMeta = {
+    id: release.datasetDefinitionId,
+    name: release.datasetDefinition.name,
+    snapshotVersion: release.activeSnapshot.version,
+    publishedAt: release.updatedAt,
+  };
+
+  // Step 6: Format
+  if (format === "geojson") {
+    return {
+      type: "FeatureCollection",
+      features: entities.map((e) => ({
+        type: "Feature",
+        id: e.id,
+        properties: {
+          ...e.properties,
+          _type: e.type,
+          _version: e.version,
+        },
+        geometry: e.geometry,
+      })),
+      metadata: {
+        dataset: datasetMeta.name,
+        snapshotVersion: datasetMeta.snapshotVersion,
+        total,
+        page,
+        pageSize: clampedPageSize,
+        totalPages,
+      },
+    };
+  }
+
+  return {
+    dataset: datasetMeta,
+    pagination: { total, page, pageSize: clampedPageSize, totalPages },
+    entities,
+  };
+}
+
+/** Get a single entity from a published dataset */
+export async function getPublishedEntity(
+  datasetDefinitionId: string,
+  entityId: string,
+) {
   const release = await prisma.activeReleaseState.findUnique({
     where: { datasetDefinitionId },
     include: { activeSnapshot: true },
@@ -65,45 +232,23 @@ export async function getPublishedEntities(datasetDefinitionId: string) {
 
   if (!release) return null;
 
-  const manifest = release.activeSnapshot.manifest as Array<{
-    entityId: string;
-    type: string;
-    modelDefinitionId: string;
-    versionNumber: number;
-    snapshot: { properties?: object; geometry?: object } | null;
-  }>;
+  const manifest = release.activeSnapshot.manifest as ManifestItem[];
+  const item = manifest.find((m) => m.entityId === entityId);
+  if (!item) return null;
 
-  // Fetch fresh geometry from entity table (primary), fall back to snapshot (stale)
-  const entities = await Promise.all(
-    manifest.map(async (item) => {
-      let geometry = null;
-      try {
-        const fresh = await getEntityWithGeometry(item.entityId);
-        geometry = fresh?.geometry ?? null;
-      } catch (err) {
-        console.warn(
-          `[Delivery] Failed to fetch geometry for entity ${item.entityId}, using snapshot fallback:`,
-          err instanceof Error ? err.message : err,
-        );
-        geometry = item.snapshot?.geometry ?? null;
-      }
-
-      return {
-        id: item.entityId,
-        type: item.type,
-        version: item.versionNumber,
-        properties: item.snapshot?.properties ?? {},
-        geometry,
-      };
-    }),
-  );
+  let geometry = null;
+  try {
+    const fresh = await getEntityWithGeometry(entityId);
+    geometry = fresh?.geometry ?? null;
+  } catch {
+    geometry = (item.snapshot?.geometry as object) ?? null;
+  }
 
   return {
-    dataset: {
-      id: release.datasetDefinitionId,
-      snapshotVersion: release.activeSnapshot.version,
-      publishedAt: release.updatedAt,
-    },
-    entities,
+    id: item.entityId,
+    type: item.type,
+    version: item.versionNumber,
+    properties: (item.snapshot?.properties ?? {}) as Record<string, unknown>,
+    geometry,
   };
 }

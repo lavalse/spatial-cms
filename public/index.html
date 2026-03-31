@@ -1148,8 +1148,7 @@ async function viewDeliveryDocs(main) {
           <span style="font-size:12px;font-weight:700;color:var(--success);background:#dcfce7;padding:2px 8px;border-radius:4px">GET</span>
           <code style="font-size:14px">/api/v1/delivery/datasets</code>
         </div>
-        <p style="color:var(--muted);font-size:13px;margin-bottom:8px">List all published datasets. Only datasets with an active published snapshot are returned.</p>
-        <pre style="font-size:12px">curl ${baseUrl}/delivery/datasets</pre>
+        <p style="color:var(--muted);font-size:13px;margin-bottom:8px">List all published datasets.</p>
       </div>
 
       <div style="margin-bottom:24px">
@@ -1157,8 +1156,7 @@ async function viewDeliveryDocs(main) {
           <span style="font-size:12px;font-weight:700;color:var(--success);background:#dcfce7;padding:2px 8px;border-radius:4px">GET</span>
           <code style="font-size:14px">/api/v1/delivery/datasets/:id</code>
         </div>
-        <p style="color:var(--muted);font-size:13px;margin-bottom:8px">Get metadata for a published dataset: name, snapshot version, entity count, publish date.</p>
-        <pre style="font-size:12px">curl ${baseUrl}/delivery/datasets/{dataset-id}</pre>
+        <p style="color:var(--muted);font-size:13px;margin-bottom:8px">Get metadata for a published dataset.</p>
       </div>
 
       <div style="margin-bottom:24px">
@@ -1166,8 +1164,43 @@ async function viewDeliveryDocs(main) {
           <span style="font-size:12px;font-weight:700;color:var(--success);background:#dcfce7;padding:2px 8px;border-radius:4px">GET</span>
           <code style="font-size:14px">/api/v1/delivery/datasets/:id/entities</code>
         </div>
-        <p style="color:var(--muted);font-size:13px;margin-bottom:8px">Get all entities in the published snapshot. Each entity includes type, properties, geometry (GeoJSON), and version number.</p>
-        <pre style="font-size:12px">curl ${baseUrl}/delivery/datasets/{dataset-id}/entities</pre>
+        <p style="color:var(--muted);font-size:13px;margin-bottom:8px">Query entities in the published snapshot. Supports pagination, spatial queries, filtering, sorting, and GeoJSON output.</p>
+        <div style="margin-top:8px;font-size:13px">
+          <table style="box-shadow:none"><thead><tr><th>Parameter</th><th>Example</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>page</code></td><td><code>1</code></td><td>Page number (default: 1)</td></tr>
+            <tr><td><code>pageSize</code></td><td><code>100</code></td><td>Items per page (default: 100, max: 1000)</td></tr>
+            <tr><td><code>bbox</code></td><td><code>139,35,140,36</code></td><td>Bounding box: minLon,minLat,maxLon,maxLat</td></tr>
+            <tr><td><code>near</code></td><td><code>139.7,35.6</code></td><td>Center point for radius search (lon,lat)</td></tr>
+            <tr><td><code>radius</code></td><td><code>5000</code></td><td>Radius in meters (used with <code>near</code>, default: 1000)</td></tr>
+            <tr><td><code>filter[field]</code></td><td><code>filter[name]=Tokyo</code></td><td>Exact match on property</td></tr>
+            <tr><td><code>filter[field][$op]</code></td><td><code>filter[height][$gte]=100</code></td><td>Operators: $gte, $lte, $gt, $lt, $ne</td></tr>
+            <tr><td><code>sort</code></td><td><code>name:asc</code></td><td>Sort by property (asc or desc)</td></tr>
+            <tr><td><code>format</code></td><td><code>geojson</code></td><td>Output as GeoJSON FeatureCollection</td></tr>
+          </tbody></table>
+        </div>
+        <pre style="font-size:12px;margin-top:8px"># Paginated
+curl "${baseUrl}/delivery/datasets/{id}/entities?page=1&pageSize=10"
+
+# Spatial: bounding box
+curl "${baseUrl}/delivery/datasets/{id}/entities?bbox=139,35,140,36"
+
+# Spatial: near point
+curl "${baseUrl}/delivery/datasets/{id}/entities?near=139.7,35.6&radius=5000"
+
+# Filter + sort
+curl "${baseUrl}/delivery/datasets/{id}/entities?filter[height][\$gte]=100&sort=height:desc"
+
+# GeoJSON format (for maps)
+curl "${baseUrl}/delivery/datasets/{id}/entities?format=geojson&bbox=139,35,140,36"</pre>
+      </div>
+
+      <div style="margin-bottom:24px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="font-size:12px;font-weight:700;color:var(--success);background:#dcfce7;padding:2px 8px;border-radius:4px">GET</span>
+          <code style="font-size:14px">/api/v1/delivery/datasets/:id/entities/:entityId</code>
+        </div>
+        <p style="color:var(--muted);font-size:13px;margin-bottom:8px">Get a single entity by ID from a published dataset.</p>
       </div>
     </div>
 
