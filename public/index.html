@@ -835,11 +835,26 @@ async function viewProposals(main) {
   const pending = proposals.filter(p => p.status === 'pending');
   const history = proposals.filter(p => p.status !== 'pending');
 
+  // Get unique model types from pending proposals for filter
+  const pendingTypes = [...new Set(pending.map(p => p.proposedChange.data?.type).filter(Boolean))];
+
   main.innerHTML = '';
-  const header = h('div', { className: 'page-header' }, h('div', {}, h('h2', {}, 'Proposals'), h('div', { className: 'sub' }, `${pending.length} pending`)));
+  const header = h('div', { className: 'page-header' });
+  header.append(h('div', {}, h('h2', {}, 'Review Queue'), h('div', { className: 'sub' }, `${pending.length} pending`)));
+  if (pending.length) {
+    const actions = h('div', { style: { display: 'flex', gap: '8px', alignItems: 'center' } });
+    actions.innerHTML = `
+      <select id="rq-filter" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px">
+        <option value="">All models</option>
+        ${pendingTypes.map(t => `<option value="${t}">${t}</option>`).join('')}
+      </select>
+      <button class="btn btn-success btn-sm" id="rq-approve-all">Approve All</button>`;
+    header.append(actions);
+  }
   main.append(header);
 
   if (pending.length) {
+    main.innerHTML += `<div id="rq-result" style="margin-bottom:12px"></div>`;
     const t = document.createElement('table');
     t.innerHTML = `<thead><tr><th>Action</th><th>Model</th><th>Name</th><th>Source</th><th>Created</th><th></th></tr></thead>
       <tbody>${pending.map(p => `<tr>
@@ -851,6 +866,27 @@ async function viewProposals(main) {
         <td><button class="btn btn-primary btn-sm" onclick="nav('manage/review/${p.id}')">Review</button></td>
       </tr>`).join('')}</tbody>`;
     main.append(t);
+
+    // Approve All handler
+    $('rq-approve-all').onclick = async () => {
+      const filterType = $('rq-filter')?.value || undefined;
+      const count = filterType ? pending.filter(p => p.proposedChange.data?.type === filterType).length : pending.length;
+      if (!confirm(`Approve ${count} pending proposal${count > 1 ? 's' : ''}${filterType ? ` for "${filterType}"` : ''}?`)) return;
+
+      const resultEl = $('rq-result');
+      resultEl.innerHTML = '<span style="color:var(--muted)">Approving...</span>';
+
+      try {
+        const body = filterType ? { filter: { type: filterType } } : {};
+        const result = await api('/proposals/approve-batch', { method: 'POST', body: JSON.stringify(body) });
+        resultEl.innerHTML = `<div style="padding:12px;border-radius:var(--radius);background:#f0fdf4;border:1px solid #bbf7d0">
+          <strong style="color:var(--success)">${result.approved} approved</strong>
+          ${result.failed > 0 ? `<span style="color:var(--danger);margin-left:12px">${result.failed} failed</span>` : ''}
+        </div>`;
+        refreshPendingCount();
+        setTimeout(() => reload(), 1500);
+      } catch (err) { resultEl.innerHTML = `<span style="color:var(--danger)">${err.message}</span>`; }
+    };
   } else {
     main.append(h('div', { className: 'card', innerHTML: '<div class="empty"><h4>No pending proposals</h4><p>All proposals have been reviewed.</p></div>' }));
   }
@@ -1557,6 +1593,7 @@ cat buildings.geojson | jq '{
       }
 
       refreshModels();
+      refreshPendingCount();
     } catch (err) {
       resultEl.innerHTML = `<div style="padding:12px;background:#fee2e2;border-radius:var(--radius);border:1px solid #fecaca"><strong style="color:var(--danger)">Error:</strong> ${err.message}</div>`;
     }

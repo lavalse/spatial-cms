@@ -43,6 +43,20 @@ proposalRouter.get("/:id", async (req, res, next) => {
   }
 });
 
+// POST /api/v1/proposals/approve-batch
+proposalRouter.post("/approve-batch", async (req, res, next) => {
+  try {
+    const { ids, filter } = req.body as {
+      ids?: string[];
+      filter?: { type?: string };
+    };
+    const result = await proposalService.approveBatch(ids, filter);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/v1/proposals/:id/approve
 proposalRouter.post("/:id/approve", async (req, res, next) => {
   try {

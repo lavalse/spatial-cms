@@ -157,6 +157,55 @@ export async function approveProposal(id: string) {
   return { proposal: { ...proposal, status: "approved" }, entity };
 }
 
+/**
+ * Batch approve: approve multiple pending proposals.
+ * If ids provided, approve those specific proposals.
+ * If filter provided, approve all pending proposals matching the filter.
+ * If neither, approve ALL pending proposals.
+ */
+export async function approveBatch(
+  ids?: string[],
+  filter?: { type?: string },
+) {
+  let proposals;
+
+  if (ids?.length) {
+    proposals = await prisma.proposal.findMany({
+      where: { id: { in: ids }, status: "pending" },
+    });
+  } else {
+    // Find all pending proposals, optionally filtered by type
+    proposals = await prisma.proposal.findMany({
+      where: { status: "pending" },
+    });
+    if (filter?.type) {
+      proposals = proposals.filter((p) => {
+        const change = p.proposedChange as { data?: { type?: string } };
+        return change.data?.type === filter.type;
+      });
+    }
+  }
+
+  let approved = 0;
+  let failed = 0;
+  const errors: Array<{ proposalId: string; error: string }> = [];
+
+  for (const p of proposals) {
+    try {
+      await approveProposal(p.id);
+      approved++;
+    } catch (err) {
+      failed++;
+      errors.push({
+        proposalId: p.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  return { total: proposals.length, approved, failed, errors };
+}
+
 export async function rejectProposal(id: string) {
   return prisma.proposal.update({
     where: { id },
