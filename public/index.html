@@ -337,7 +337,7 @@ async function viewDashboard(main) {
   // Fetch all data in parallel
   const [models, entities, proposals, datasets, publications] = await Promise.all([
     api('/definitions/models').catch(() => []),
-    api('/entities?pageSize=1000').then(r => r.entities || r).catch(() => []),
+    api('/entities?pageSize=1000&status=active').then(r => r.entities || r).catch(() => []),
     api('/proposals').catch(() => []),
     api('/datasets').catch(() => []),
     api('/publications').catch(() => []),
@@ -427,7 +427,7 @@ async function viewDashboard(main) {
 async function viewContentAll(main) {
   setBreadcrumb(['Manage'], ['Records']);
   setActiveNav('manage/records');
-  const result = await api('/entities?pageSize=1000');
+  const result = await api('/entities?pageSize=1000&status=active');
   const entities = result.entities || result;
   main.innerHTML = '';
 
@@ -451,9 +451,9 @@ async function viewContentAll(main) {
         <option value="">All models</option>
         ${modelCache.map(m => `<option value="${m.key}">${m.name}</option>`).join('')}
       </select>
-      <select id="rec-filter-status" style="padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px" onchange="filterRecords()">
+      <select id="rec-filter-status" style="padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px" onchange="reloadRecords()">
+        <option value="active" selected>Active</option>
         <option value="">All statuses</option>
-        <option value="active">Active</option>
         <option value="draft">Draft</option>
         <option value="archived">Archived</option>
       </select>
@@ -467,14 +467,20 @@ async function viewContentAll(main) {
   filterRecords();
 }
 
+async function reloadRecords() {
+  const statusFilter = $('rec-filter-status')?.value || '';
+  const statusParam = statusFilter ? `&status=${statusFilter}` : '';
+  const result = await api(`/entities?pageSize=1000${statusParam}`);
+  window._allEntities = result.entities || result;
+  filterRecords();
+}
+
 function filterRecords() {
   const search = ($('rec-search')?.value || '').toLowerCase();
   const modelFilter = $('rec-filter-model')?.value || '';
-  const statusFilter = $('rec-filter-status')?.value || '';
   const entities = (window._allEntities || []).filter(e => {
     if (search && !(e.properties?.name || '').toLowerCase().includes(search)) return false;
     if (modelFilter && e.type !== modelFilter) return false;
-    if (statusFilter && e.status !== statusFilter) return false;
     return true;
   });
   const container = $('rec-table');
@@ -493,7 +499,7 @@ function filterRecords() {
 async function viewContentByModel(main, modelKey) {
   setBreadcrumb(['Manage'], ['Records', `nav('manage/records')`], [modelKey]);
   setActiveNav(`manage/records/${modelKey}`);
-  const result = await api(`/entities?type=${modelKey}&pageSize=1000`);
+  const result = await api(`/entities?type=${modelKey}&pageSize=1000&status=active`);
   const entities = result.entities || result;
   const model = modelCache.find(m => m.key === modelKey);
   const modelName = model?.name || modelKey;
@@ -505,8 +511,8 @@ async function viewContentByModel(main, modelKey) {
     </div>
     ${entities.length ? `<div style="display:flex;gap:12px;margin-bottom:16px">
       <input id="model-search" type="text" placeholder="Search by name..." style="flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px;outline:none" oninput="filterModelRecords('${modelKey}')">
-      <select id="model-filter-status" style="padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px" onchange="filterModelRecords('${modelKey}')">
-        <option value="">All statuses</option><option value="active">Active</option><option value="draft">Draft</option><option value="archived">Archived</option>
+      <select id="model-filter-status" style="padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px" onchange="reloadModelRecords('${modelKey}')">
+        <option value="active" selected>Active</option><option value="">All statuses</option><option value="draft">Draft</option><option value="archived">Archived</option>
       </select>
     </div>` : ''}
     <div id="model-rec-table"></div>`;
@@ -519,12 +525,18 @@ async function viewContentByModel(main, modelKey) {
   filterModelRecords(modelKey);
 }
 
+async function reloadModelRecords(modelKey) {
+  const statusFilter = $('model-filter-status')?.value || '';
+  const statusParam = statusFilter ? `&status=${statusFilter}` : '';
+  const result = await api(`/entities?type=${modelKey}&pageSize=1000${statusParam}`);
+  window._modelEntities = result.entities || result;
+  filterModelRecords(modelKey);
+}
+
 function filterModelRecords(modelKey) {
   const search = ($('model-search')?.value || '').toLowerCase();
-  const statusFilter = $('model-filter-status')?.value || '';
   const entities = (window._modelEntities || []).filter(e => {
     if (search && !(e.properties?.name || '').toLowerCase().includes(search)) return false;
-    if (statusFilter && e.status !== statusFilter) return false;
     return true;
   });
   const container = $('model-rec-table');
