@@ -140,5 +140,22 @@ export async function updateEntityInternal(
     await setEntityGeometry(id, changes.geometry);
   }
 
-  return getEntityWithGeometry(id);
+  // Patch the version snapshot with actual geometry from PostGIS
+  // (inside the transaction, geometry wasn't available via raw SQL)
+  const current = await getEntityWithGeometry(id);
+  if (current?.geometry) {
+    const latestVer = await prisma.entityVersion.findFirst({
+      where: { entityId: id },
+      orderBy: { versionNumber: "desc" },
+    });
+    if (latestVer) {
+      const snap = (latestVer.snapshot as Record<string, unknown>) ?? {};
+      await prisma.entityVersion.update({
+        where: { id: latestVer.id },
+        data: { snapshot: { ...snap, geometry: current.geometry } },
+      });
+    }
+  }
+
+  return current ?? await getEntityWithGeometry(id);
 }
