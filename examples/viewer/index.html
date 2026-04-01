@@ -10,7 +10,7 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #0f172a; color: #e2e8f0; }
 
-    .app { display: grid; grid-template-columns: 360px 1fr; grid-template-rows: 48px 1fr 180px; height: 100vh; }
+    .app { display: grid; grid-template-columns: 360px 1fr; grid-template-rows: 48px 1fr var(--log-height, 180px); height: 100vh; }
     .topbar { grid-column: 1 / -1; background: #0f172a; display: flex; align-items: center; padding: 0 16px; gap: 12px; border-bottom: 1px solid #1e293b; }
     .topbar h1 { font-size: 15px; font-weight: 600; color: #f8fafc; white-space: nowrap; }
     .topbar select { padding: 5px 8px; border: 1px solid #334155; border-radius: 6px; font-size: 12px; background: #1e293b; color: #e2e8f0; outline: none; max-width: 250px; }
@@ -57,7 +57,9 @@
 
     #map { min-height: 0; }
 
-    .api-log { grid-column: 1 / -1; background: #0f172a; border-top: 1px solid #1e293b; display: flex; flex-direction: column; }
+    .api-log { grid-column: 1 / -1; background: #0f172a; border-top: 1px solid #1e293b; display: flex; flex-direction: column; position: relative; }
+    .api-log-resize { height: 5px; cursor: ns-resize; position: absolute; top: -3px; left: 0; right: 0; z-index: 10; }
+    .api-log-resize:hover { background: rgba(59,130,246,0.3); }
     .api-log-header { padding: 6px 14px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; display: flex; justify-content: space-between; border-bottom: 1px solid #1e293b; }
     .api-log-split { flex: 1; display: grid; grid-template-columns: 1fr 1fr; min-height: 0; }
     .api-log-list { overflow-y: auto; border-right: 1px solid #1e293b; font-family: "JetBrains Mono", Consolas, monospace; font-size: 12px; }
@@ -109,6 +111,7 @@
   </div>
   <div id="map"></div>
   <div class="api-log">
+    <div class="api-log-resize" id="log-resize"></div>
     <div class="api-log-header"><span>API Log</span><span id="log-clear" style="cursor:pointer;color:#475569">clear</span></div>
     <div class="api-log-split">
       <div class="api-log-list" id="api-log"></div>
@@ -176,6 +179,25 @@ function renderApiLog() {
   if (apiLogs.length) { showLogDetail(0); el.querySelector('.log-entry')?.setAttribute('style', 'cursor:pointer;background:#1e293b'); }
 }
 document.getElementById('log-clear').onclick = () => { apiLogs.length = 0; renderApiLog(); document.getElementById('api-log-detail').innerHTML = '<span style="color:#475569">Click a request to view response</span>'; };
+
+// Resizable API log panel
+(function() {
+  const handle = document.getElementById('log-resize');
+  let startY, startH;
+  handle.onmousedown = (e) => {
+    e.preventDefault();
+    startY = e.clientY;
+    startH = document.querySelector('.api-log').offsetHeight;
+    const onMove = (e) => {
+      const newH = Math.max(80, Math.min(600, startH + (startY - e.clientY)));
+      document.querySelector('.app').style.setProperty('--log-height', newH + 'px');
+      map.invalidateSize();
+    };
+    const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  };
+})();
 function showLogDetail(i) {
   const l = apiLogs[i]; if (!l) return;
   const json = JSON.stringify(l.data, null, 2);
@@ -264,48 +286,53 @@ async function loadDataset(datasetId) {
 
   // Load schema
   schemaData = await apiGet(`/delivery/datasets/${DATASET_ID}/schema`);
-  const model = schemaData?.models?.[0];
+  const models = schemaData?.models || [];
+  // Merge all model fields for multi-model datasets
+  const allFields = models.flatMap(m => m.fields || []);
+  // Deduplicate by key (first occurrence wins)
+  const fieldMap = {};
+  allFields.forEach(f => { if (!fieldMap[f.key]) fieldMap[f.key] = f; });
+  const mergedFields = Object.values(fieldMap);
 
-  if (model) {
-    modelName = model.name;
-    geometryType = model.geometryType || 'MIXED';
-    document.title = `${modelName} — Viewer`;
-    document.getElementById('search').placeholder = `Search ${modelName}...`;
+  modelName = models.map(m => m.name).join(' + ') || 'Data';
+  geometryType = models[0]?.geometryType || 'MIXED';
+  document.title = `${schemaData?.dataset || modelName} — Viewer`;
+  document.getElementById('search').placeholder = `Search ${modelName}...`;
 
-    // Derive field roles from schema
-    const fields = model.fields || [];
-    titleField = fields.find(f => f.fieldType === 'string') || null;
-    subtitleFields = fields.filter(f => f !== titleField && ['number', 'string', 'enum_'].includes(f.fieldType)).slice(0, 3);
-    enumField = fields.find(f => f.fieldType === 'enum_' && f.enumValues?.length) || null;
-    numberField = fields.find(f => f.fieldType === 'number') || null;
+  // Derive field roles: prefer 'name' field, fallback to first string
+  titleField = mergedFields.find(f => f.key === 'name' && f.fieldType === 'string')
+    || mergedFields.find(f => f.fieldType === 'string') || null;
+  subtitleFields = mergedFields.filter(f => f !== titleField && ['number', 'string', 'enum_'].includes(f.fieldType)).slice(0, 3);
+  enumField = mergedFields.find(f => f.fieldType === 'enum_' && f.enumValues?.length) || null;
+  numberField = mergedFields.find(f => f.fieldType === 'number') || null;
 
-    // Render schema panel
-    document.getElementById('schema-panel').style.display = 'block';
-    document.getElementById('schema-body').innerHTML =
-      `<div style="font-size:12px;color:#94a3b8;margin-bottom:6px">${modelName} · ${geometryType}</div>` +
-      fields.map(f => `<div class="schema-field"><span class="sf-name">${f.label}</span><span class="sf-type">${f.fieldType}${f.isRequired ? ' *' : ''}</span></div>`).join('');
+  // Render schema panel — show ALL models
+  document.getElementById('schema-panel').style.display = 'block';
+  document.getElementById('schema-body').innerHTML = models.map(m =>
+    `<div style="font-size:12px;font-weight:600;color:#e2e8f0;margin:8px 0 4px">${m.name} <span style="font-weight:400;color:#64748b">${m.geometryType}</span></div>` +
+    (m.fields || []).map(f => `<div class="schema-field"><span class="sf-name">${f.label}</span><span class="sf-type">${f.fieldType}${f.isRequired ? ' *' : ''}</span></div>`).join('')
+  ).join('');
 
-    let schemaVisible = true;
-    document.getElementById('schema-toggle').onclick = () => {
-      schemaVisible = !schemaVisible;
-      document.getElementById('schema-body').style.display = schemaVisible ? '' : 'none';
-      document.getElementById('schema-toggle').textContent = schemaVisible ? 'hide' : 'show';
-    };
+  let schemaVisible = true;
+  document.getElementById('schema-toggle').onclick = () => {
+    schemaVisible = !schemaVisible;
+    document.getElementById('schema-body').style.display = schemaVisible ? '' : 'none';
+    document.getElementById('schema-toggle').textContent = schemaVisible ? 'hide' : 'show';
+  };
 
-    // Build filter chips from enum field
-    if (enumField) {
-      const el = document.getElementById('filters');
-      el.innerHTML = `<span class="filter-chip active" data-val="">All</span>` +
-        enumField.enumValues.slice(0, 12).map(v => `<span class="filter-chip" data-val="${v}">${v}</span>`).join('');
-      el.querySelectorAll('.filter-chip').forEach(chip => {
-        chip.onclick = () => {
-          el.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
-          chip.classList.add('active');
-          activeFilter = chip.dataset.val;
-          loadMapData();
-        };
-      });
-    }
+  // Build filter chips from enum field
+  if (enumField) {
+    const el = document.getElementById('filters');
+    el.innerHTML = `<span class="filter-chip active" data-val="">All</span>` +
+      enumField.enumValues.slice(0, 12).map(v => `<span class="filter-chip" data-val="${v}">${v}</span>`).join('');
+    el.querySelectorAll('.filter-chip').forEach(chip => {
+      chip.onclick = () => {
+        el.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        activeFilter = chip.dataset.val;
+        loadMapData();
+      };
+    });
   }
 
   // Search
@@ -401,10 +428,15 @@ function selectFeature(feature) {
   selectedId = feature.id;
   const props = feature.properties || {};
 
-  // Schema-driven popup
+  // Schema-driven popup: find matching model by _type, fallback to all fields
   let rows = '';
-  if (schemaData?.models?.[0]) {
-    for (const field of schemaData.models[0].fields) {
+  const entityType = props._type;
+  const matchModel = schemaData?.models?.find(m => m.key === entityType);
+  const popupFields = matchModel?.fields || schemaData?.models?.flatMap(m => m.fields || []) || [];
+  if (popupFields.length) {
+    const seen = new Set();
+    for (const field of popupFields) {
+      if (seen.has(field.key)) continue; seen.add(field.key);
       const val = props[field.key];
       if (val !== undefined && val !== null && val !== '') {
         rows += `<div class="dp-row"><span class="dp-label">${field.label}</span><span class="dp-value">${val}</span></div>`;
@@ -416,6 +448,7 @@ function selectFeature(feature) {
       rows += `<div class="dp-row"><span class="dp-label">${k}</span><span class="dp-value">${v}</span></div>`;
     }
   }
+  if (entityType) rows += `<div class="dp-row"><span class="dp-label">Type</span><span class="dp-value"><span class="li-type">${entityType}</span></span></div>`;
 
   const title = titleField ? (props[titleField.key] || 'Untitled') : (props.name || 'Feature');
   const popup = L.popup({ maxWidth: 300 }).setContent(`<div class="detail-popup"><h3>${title}</h3>${rows}<div style="margin-top:6px;font-size:10px;color:#94a3b8">v${props._version || '?'} · ${feature.id?.substring(0,8)}...</div></div>`);
