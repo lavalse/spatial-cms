@@ -1401,6 +1401,37 @@ async function viewIngestionDocs(main) {
     </div>
 
     <div class="card">
+      <h3>File Import</h3>
+      <p style="color:var(--muted);font-size:13px;margin-bottom:12px">Drag and drop a GeoJSON or CSV file to import data.</p>
+
+      <!-- Step 1: File + Model -->
+      <div class="form-row" style="margin-bottom:12px">
+        <div class="form-group" style="flex:1">
+          <label>Model</label>
+          <select id="fi-model">${models.map(m => `<option value="${m.key}" data-id="${m.id}">${m.name} (${m.key})</option>`).join('')}</select>
+        </div>
+        <div class="form-group" style="flex:1">
+          <label>Import Mode</label>
+          <select id="fi-mode">
+            <option value="governed">Auto-governed (recommended)</option>
+            <option value="proposal">Proposal Batch</option>
+            <option value="import">Direct Import (trusted)</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="fi-dropzone" style="border:2px dashed var(--border);border-radius:var(--radius);padding:32px;text-align:center;cursor:pointer;transition:border-color 0.15s;margin-bottom:12px">
+        <div style="font-size:24px;margin-bottom:8px">&#128194;</div>
+        <div style="font-size:14px;color:var(--text)">Drop GeoJSON or CSV file here</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px">or <span style="color:var(--primary);text-decoration:underline">click to browse</span></div>
+        <input type="file" id="fi-file" accept=".geojson,.json,.csv" style="display:none">
+      </div>
+
+      <!-- Step 2-5: Results area -->
+      <div id="fi-results"></div>
+    </div>
+
+    <div class="card">
       <h3>Test Data Generator</h3>
       <p style="color:var(--muted);font-size:13px;margin-bottom:12px">Generate random test data for any model, optionally with errors to test validation.</p>
       <div class="form-row">
@@ -1645,6 +1676,199 @@ cat buildings.geojson | jq '{
       resultEl.innerHTML = `<div style="padding:12px;background:#fee2e2;border-radius:var(--radius);border:1px solid #fecaca"><strong style="color:var(--danger)">Error:</strong> ${err.message}</div>`;
     }
   };
+
+  // ── File Import ──
+  const dropzone = $('fi-dropzone');
+  const fileInput = $('fi-file');
+
+  dropzone.onclick = () => fileInput.click();
+  dropzone.ondragover = (e) => { e.preventDefault(); dropzone.style.borderColor = 'var(--primary)'; dropzone.style.background = 'rgba(99,102,241,0.03)'; };
+  dropzone.ondragleave = () => { dropzone.style.borderColor = 'var(--border)'; dropzone.style.background = ''; };
+  dropzone.ondrop = (e) => { e.preventDefault(); dropzone.style.borderColor = 'var(--border)'; dropzone.style.background = ''; handleFile(e.dataTransfer.files[0]); };
+  fileInput.onchange = () => { if (fileInput.files[0]) handleFile(fileInput.files[0]); };
+
+  let fiParsedEntities = [];
+
+  async function handleFile(file) {
+    const results = $('fi-results');
+    results.innerHTML = '<span style="color:var(--muted)">Parsing file...</span>';
+
+    try {
+      const text = await file.text();
+      const isCSV = file.name.endsWith('.csv');
+      let records = [];
+
+      if (isCSV) {
+        // Parse CSV
+        const lines = text.split('\n').filter(l => l.trim());
+        if (lines.length < 2) throw new Error('CSV must have a header row and at least one data row');
+        const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+        records = lines.slice(1).map(line => {
+          const values = line.split(',').map(v => v.trim().replace(/^"|"$/g, ''));
+          const obj = {};
+          headers.forEach((h, i) => { if (values[i] !== undefined && values[i] !== '') obj[h] = values[i]; });
+          return obj;
+        });
+        dropzone.innerHTML = `<div style="color:var(--success)">&#10003; ${file.name}</div><div style="font-size:12px;color:var(--muted)">${records.length} rows, ${headers.length} columns (CSV)</div>`;
+      } else {
+        // Parse GeoJSON
+        const data = JSON.parse(text);
+        const features = data.type === 'FeatureCollection' ? data.features : data.elements ? data.elements : Array.isArray(data) ? data : [data];
+        records = features.map(f => {
+          if (f.type === 'Feature') return { ...f.properties, _geometry: f.geometry };
+          if (f.geometry && f.tags) return { ...f.tags, _geometry: { type: 'Polygon', coordinates: [f.geometry.map(n => [n.lon, n.lat])] } }; // OSM
+          return f.properties ? { ...f.properties, _geometry: f.geometry } : f;
+        });
+        dropzone.innerHTML = `<div style="color:var(--success)">&#10003; ${file.name}</div><div style="font-size:12px;color:var(--muted)">${records.length} features (GeoJSON)</div>`;
+      }
+
+      if (!records.length) throw new Error('No records found in file');
+
+      // Get schema for mapping
+      const modelId = $('fi-model').selectedOptions[0]?.dataset.id;
+      const schema = modelId ? await apiGet(`/definitions/models/${modelId}/schema`) : null;
+      const schemaFields = schema?.fields || [];
+
+      // Auto-detect field mapping
+      const fileKeys = [...new Set(records.flatMap(r => Object.keys(r)))].filter(k => k !== '_geometry');
+      const mapping = {};
+      fileKeys.forEach(fk => {
+        const match = schemaFields.find(sf => sf.key === fk || sf.key === fk.toLowerCase() || sf.label.toLowerCase() === fk.toLowerCase());
+        if (match) mapping[fk] = match.key;
+      });
+
+      // Detect lat/lon for CSV
+      const latKey = fileKeys.find(k => /^(lat|latitude)$/i.test(k));
+      const lonKey = fileKeys.find(k => /^(lon|lng|longitude)$/i.test(k));
+
+      // Show preview + mapping
+      const previewRows = records.slice(0, 5);
+      results.innerHTML = `
+        <div style="margin-bottom:12px">
+          <div style="font-weight:600;font-size:14px;margin-bottom:8px">Preview (${records.length} records)</div>
+          <div style="overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius);max-height:180px;overflow-y:auto">
+            <table style="box-shadow:none;font-size:12px"><thead><tr>${fileKeys.slice(0, 8).map(k => `<th>${k}</th>`).join('')}</tr></thead>
+            <tbody>${previewRows.map(r => `<tr>${fileKeys.slice(0, 8).map(k => `<td style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r[k] ?? ''}</td>`).join('')}</tr>`).join('')}</tbody></table>
+          </div>
+        </div>
+
+        <div style="margin-bottom:12px">
+          <div style="font-weight:600;font-size:14px;margin-bottom:8px">Field Mapping</div>
+          <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:4px 8px;font-size:13px;align-items:center">
+            <div style="font-weight:600;color:var(--muted);font-size:11px;text-transform:uppercase">File Column</div>
+            <div></div>
+            <div style="font-weight:600;color:var(--muted);font-size:11px;text-transform:uppercase">Model Field</div>
+            ${fileKeys.filter(k => k !== '_geometry' && k !== latKey && k !== lonKey).map(fk => `
+              <div><code>${fk}</code></div>
+              <div style="color:var(--muted)">→</div>
+              <div><select class="fi-mapping" data-file-key="${fk}" style="width:100%;padding:4px;border:1px solid var(--border);border-radius:4px;font-size:12px">
+                <option value="">— skip —</option>
+                ${schemaFields.map(sf => `<option value="${sf.key}" ${mapping[fk] === sf.key ? 'selected' : ''}>${sf.label} (${sf.key})</option>`).join('')}
+              </select></div>
+            `).join('')}
+          </div>
+          ${latKey && lonKey ? `<div style="margin-top:8px;font-size:12px;color:var(--success)">&#10003; Detected coordinates: ${latKey} + ${lonKey} → Point geometry</div>` : ''}
+          ${!isCSV && records.some(r => r._geometry) ? `<div style="margin-top:8px;font-size:12px;color:var(--success)">&#10003; GeoJSON geometry detected</div>` : ''}
+        </div>
+
+        <div style="display:flex;gap:8px;margin-bottom:12px">
+          <button class="btn btn-outline" id="fi-validate">Validate</button>
+          <button class="btn btn-primary" id="fi-import" disabled>Import</button>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);margin-left:8px"><input type="checkbox" id="fi-skip"> Skip invalid</label>
+        </div>
+        <div id="fi-report"></div>
+      `;
+
+      // Store parsed data for validate/import
+      fiParsedEntities = records.map(r => {
+        const props = {};
+        // Apply mapping from current select values
+        return { _raw: r, _latKey: latKey, _lonKey: lonKey, _isCSV: isCSV };
+      });
+      window._fiRecords = records;
+      window._fiFileKeys = fileKeys;
+      window._fiLatKey = latKey;
+      window._fiLonKey = lonKey;
+      window._fiIsCSV = isCSV;
+
+      // Validate handler
+      $('fi-validate').onclick = async () => {
+        const entities = buildEntitiesFromMapping();
+        const modelKey = $('fi-model').value;
+        const report = $('fi-report');
+        report.innerHTML = '<span style="color:var(--muted)">Validating...</span>';
+        try {
+          const result = await api('/ingestion/validate', { method: 'POST', body: JSON.stringify({ modelKey, entities: entities.map(e => ({ properties: e.properties, geometry: e.geometry })) }) });
+          report.innerHTML = `<div style="display:flex;gap:12px;margin-bottom:8px">
+            <div style="padding:8px 16px;background:#f0fdf4;border-radius:var(--radius);border:1px solid #bbf7d0;text-align:center"><div style="font-size:20px;font-weight:700;color:var(--success)">${result.valid}</div><div style="font-size:11px;color:var(--muted)">Valid</div></div>
+            ${result.invalid > 0 ? `<div style="padding:8px 16px;background:#fee2e2;border-radius:var(--radius);border:1px solid #fecaca;text-align:center"><div style="font-size:20px;font-weight:700;color:var(--danger)">${result.invalid}</div><div style="font-size:11px;color:var(--muted)">Invalid</div></div>` : ''}
+          </div>
+          ${result.errors?.length ? `<div style="max-height:120px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);font-size:12px">${result.errors.slice(0, 30).map(e => `<div style="padding:4px 10px;border-bottom:1px solid var(--border)"><span style="color:var(--danger)">Row ${e.index}:</span> ${e.errors.join('; ')}</div>`).join('')}</div>` : ''}`;
+          $('fi-import').disabled = false;
+        } catch (err) { report.innerHTML = `<span style="color:var(--danger)">${err.message}</span>`; }
+      };
+
+      // Import handler
+      $('fi-import').onclick = async () => {
+        const entities = buildEntitiesFromMapping();
+        const modelKey = $('fi-model').value;
+        const mode = $('fi-mode').value;
+        const skipInvalid = $('fi-skip')?.checked || false;
+        const report = $('fi-report');
+        report.innerHTML = '<span style="color:var(--muted)">Importing...</span>';
+        try {
+          const t0 = Date.now();
+          const apiEntities = entities.map(e => ({ type: modelKey, properties: e.properties, geometry: e.geometry }));
+          let result;
+          if (mode === 'governed') {
+            result = await api('/ingestion/governed', { method: 'POST', body: JSON.stringify({ entities: apiEntities, source: 'import_', options: { skipInvalid } }) });
+            report.innerHTML = `<div style="padding:12px;background:#f0fdf4;border-radius:var(--radius);border:1px solid #bbf7d0"><strong style="color:var(--success)">${result.approved || 0} auto-approved</strong>${result.pending ? `, <strong style="color:#1e40af">${result.pending} pending review</strong>` : ''}${result.skipped ? `, ${result.skipped} skipped` : ''} · ${((Date.now()-t0)/1000).toFixed(1)}s</div>`;
+          } else if (mode === 'proposal') {
+            const proposals = apiEntities.map(e => ({ proposedChange: { action: 'create', data: e } }));
+            result = await api('/ingestion/proposal-set', { method: 'POST', body: JSON.stringify({ proposals, source: 'import_' }) });
+            report.innerHTML = `<div style="padding:12px;background:#dbeafe;border-radius:var(--radius);border:1px solid #93c5fd"><strong style="color:#1e40af">${result.created} proposals created</strong> · ${((Date.now()-t0)/1000).toFixed(1)}s</div>`;
+          } else {
+            result = await api('/ingestion/import', { method: 'POST', body: JSON.stringify({ entities: apiEntities, source: 'import_', options: { skipInvalid } }) });
+            report.innerHTML = `<div style="padding:12px;background:#f0fdf4;border-radius:var(--radius);border:1px solid #bbf7d0"><strong style="color:var(--success)">${result.imported} imported</strong>${result.skipped ? `, ${result.skipped} skipped` : ''} · ${((Date.now()-t0)/1000).toFixed(1)}s</div>`;
+          }
+          refreshModels(); refreshPendingCount();
+        } catch (err) { report.innerHTML = `<span style="color:var(--danger)">${err.message}</span>`; }
+      };
+
+    } catch (err) {
+      results.innerHTML = `<div style="padding:12px;background:#fee2e2;border-radius:var(--radius);border:1px solid #fecaca;font-size:13px"><strong style="color:var(--danger)">Parse error:</strong> ${err.message}</div>`;
+    }
+  }
+
+  function buildEntitiesFromMapping() {
+    const records = window._fiRecords || [];
+    const mappings = {};
+    document.querySelectorAll('.fi-mapping').forEach(sel => {
+      if (sel.value) mappings[sel.dataset.fileKey] = sel.value;
+    });
+    const latKey = window._fiLatKey;
+    const lonKey = window._fiLonKey;
+    const isCSV = window._fiIsCSV;
+
+    return records.map(r => {
+      const properties = {};
+      for (const [fileKey, modelKey] of Object.entries(mappings)) {
+        let val = r[fileKey];
+        if (val !== undefined && val !== null && val !== '') {
+          // Try to parse numbers from CSV
+          if (isCSV && !isNaN(Number(val)) && val.trim() !== '') val = Number(val);
+          properties[modelKey] = val;
+        }
+      }
+      let geometry = null;
+      if (r._geometry) {
+        geometry = r._geometry;
+      } else if (latKey && lonKey && r[latKey] && r[lonKey]) {
+        geometry = { type: 'Point', coordinates: [parseFloat(r[lonKey]), parseFloat(r[latKey])] };
+      }
+      return { properties, geometry };
+    });
+  }
 }
 
 // ─── OGC Services Docs ─────────────────────────────
