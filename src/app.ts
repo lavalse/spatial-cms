@@ -28,6 +28,19 @@ app.get("/health", async (_req, res) => {
   }
 });
 
+// CORS for all API routes (external tools, viewer, dedup tool)
+app.use("/api/v1", (
+  _req: express.Request,
+  res: express.Response,
+  next: express.NextFunction,
+) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type");
+  if (_req.method === "OPTIONS") { res.sendStatus(204); return; }
+  next();
+});
+
 // API routes
 app.use("/api/v1/entities", entityRouter);
 app.use("/api/v1/proposals", proposalRouter);
@@ -36,18 +49,8 @@ app.use("/api/v1/publications", publicationRouter);
 app.use("/api/v1/ingestion", ingestionRouter);
 app.use("/api/v1/definitions", definitionRouter);
 
-// Delivery + OGC: enable CORS for external consumers
-const corsHeaders = (
-  _req: express.Request,
-  res: express.Response,
-  next: express.NextFunction,
-) => {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Headers", "Content-Type");
-  next();
-};
-app.use("/api/v1/delivery", corsHeaders, deliveryRouter);
-app.use("/api/v1/ogc", corsHeaders, ogcRouter);
+app.use("/api/v1/delivery", deliveryRouter);
+app.use("/api/v1/ogc", ogcRouter);
 
 // Global error handler
 app.use(
