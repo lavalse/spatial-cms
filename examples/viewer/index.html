@@ -362,16 +362,21 @@ async function loadMapDataCustom(spatialParam) {
   let filterParam = '';
   if (activeFilter && enumField) filterParam = `&filter[${enumField.key}]=${encodeURIComponent(activeFilter)}`;
 
+  const isActiveSearch = !!(searchRect || nearCircle);
+
   try {
     // Load spatial data for map (with bbox/near, geojson format)
     const mapPath = `/delivery/datasets/${DATASET_ID}/entities?${spatialParam}&pageSize=500&format=geojson${filterParam}`;
     const fc = await apiGet(mapPath);
     let mapFeatures = fc.features || [];
 
-    // Also load list data WITHOUT spatial constraint (includes entities without geometry)
-    const listPath = `/delivery/datasets/${DATASET_ID}/entities?pageSize=200${filterParam}`;
-    const listResult = await apiGet(listPath);
-    let listEntities = listResult.entities || [];
+    // Only load non-spatial list in browse mode (not during active bbox/near search)
+    let listEntities = [];
+    if (!isActiveSearch) {
+      const listPath = `/delivery/datasets/${DATASET_ID}/entities?pageSize=200${filterParam}`;
+      const listResult = await apiGet(listPath);
+      listEntities = listResult.entities || [];
+    }
 
     // Client-side name search
     if (search && titleField) {
