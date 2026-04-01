@@ -1726,7 +1726,7 @@ cat buildings.geojson | jq '{
 
       // Get schema for mapping
       const modelId = $('fi-model').selectedOptions[0]?.dataset.id;
-      const schema = modelId ? await apiGet(`/definitions/models/${modelId}/schema`) : null;
+      const schema = modelId ? await api(`/definitions/models/${modelId}/schema`) : null;
       const schemaFields = schema?.fields || [];
 
       // Auto-detect field mapping
