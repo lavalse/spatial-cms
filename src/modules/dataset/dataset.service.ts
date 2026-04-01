@@ -33,6 +33,20 @@ export async function createDatasetDefinition(data: {
   });
 }
 
+export async function deleteDatasetDefinition(id: string) {
+  const dataset = await prisma.datasetDefinition.findUnique({ where: { id } });
+  if (!dataset) throw new NotFoundError("Dataset definition");
+
+  // Cascade: ActiveReleaseState, Publications, Snapshots, Bindings, GovernancePolicy
+  // Prisma schema has onDelete: Cascade for most relations.
+  // ActiveReleaseState needs manual delete (it references snapshot with onDelete: Restrict)
+  await prisma.activeReleaseState.deleteMany({ where: { datasetDefinitionId: id } });
+  // GovernancePolicy is polymorphic (no FK), delete manually
+  await prisma.governancePolicy.deleteMany({ where: { targetType: "dataset", targetId: id } });
+
+  return prisma.datasetDefinition.delete({ where: { id } });
+}
+
 /** Generate a snapshot: select entities matching the definition, build manifest */
 export async function generateSnapshot(datasetDefinitionId: string) {
   const definition = await prisma.datasetDefinition.findUnique({

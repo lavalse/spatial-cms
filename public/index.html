@@ -1190,9 +1190,27 @@ async function viewDatasets(main) {
         <td>${d.name}</td>
         <td>${(d.entityTypes||[]).join(', ') || '<span style="color:var(--muted)">via bindings</span>'}</td>
         <td>${d.activeReleaseState ? badge('published') : badge('none')}</td>
-        <td><button class="btn btn-ghost btn-sm" onclick="nav('publish/datasets/${d.id}')">Manage</button></td>
+        <td><button class="btn btn-ghost btn-sm" onclick="nav('publish/datasets/${d.id}')">Manage</button> <button class="btn btn-ghost btn-sm" style="color:var(--danger)" data-delete-ds="${d.id}" data-ds-name="${d.name}" data-ds-published="${d.activeReleaseState ? 'true' : 'false'}">Delete</button></td>
       </tr>`).join('')}</tbody>`;
     main.append(t);
+
+    // Delete dataset handlers
+    main.querySelectorAll('[data-delete-ds]').forEach(btn => {
+      btn.onclick = async () => {
+        const dsId = btn.dataset.deleteDs;
+        const name = btn.dataset.dsName;
+        const published = btn.dataset.dsPublished === 'true';
+        const msg = published
+          ? `Delete "${name}"?\n\nThis dataset is currently PUBLISHED. External consumers using the Delivery API will lose access.\n\nAll snapshots, publications, and bindings will be permanently deleted.`
+          : `Delete "${name}"?\n\nAll snapshots, publications, and bindings will be permanently deleted.`;
+        if (!confirm(msg)) return;
+        try {
+          await api(`/datasets/${dsId}`, { method: 'DELETE' });
+          toast('Dataset deleted');
+          reload();
+        } catch (err) { toast(err.message, 'error'); }
+      };
+    });
   }
 }
 
@@ -1204,7 +1222,7 @@ async function viewDatasetDetail(main, datasetId) {
   setActiveNav('publish/datasets');
 
   main.innerHTML = `<div class="page-header"><div><h2>${d.name}</h2></div>
-    <button class="btn btn-primary" id="gen-snap-btn">Generate Snapshot</button></div>
+    <div style="display:flex;gap:8px"><button class="btn btn-primary" id="gen-snap-btn">Generate Snapshot</button><button class="btn btn-outline btn-sm" style="color:var(--danger)" id="del-ds-btn">Delete Dataset</button></div></div>
 
     <div class="card"><h3>Model Bindings</h3>
       ${bindings.length ? bindings.map(b => `<div class="field-item"><div class="fi-main"><div class="fi-label">${b.modelDefinition.name}</div><div class="fi-meta">${b.modelDefinition.key}</div></div><button class="btn btn-ghost btn-sm" style="color:var(--danger)" data-unbind="${b.id}">Remove</button></div>`).join('') : '<p style="color:var(--muted);padding:12px 0">No model bindings yet.</p>'}
@@ -1227,6 +1245,14 @@ async function viewDatasetDetail(main, datasetId) {
     <div class="card"><h3>Publication History</h3><div id="ds-pub-history" style="color:var(--muted)">Loading...</div></div>`;
 
   $('gen-snap-btn').onclick = async () => { try { await api(`/datasets/${datasetId}/snapshot`, { method: 'POST' }); toast('Snapshot generated'); nav(`publish/datasets/${datasetId}`); } catch (err) { toast(err.message, 'error'); } };
+  $('del-ds-btn').onclick = async () => {
+    const hasRelease = d.snapshots?.some(s => s.status === 'published');
+    const msg = hasRelease
+      ? `Delete "${d.name}"?\n\nThis dataset has published snapshots. External consumers will lose access via Delivery API.\n\nAll snapshots, publications, and bindings will be permanently deleted.`
+      : `Delete "${d.name}"?\n\nAll snapshots and bindings will be permanently deleted.`;
+    if (!confirm(msg)) return;
+    try { await api(`/datasets/${datasetId}`, { method: 'DELETE' }); toast('Dataset deleted'); nav('publish/datasets'); } catch (err) { toast(err.message, 'error'); }
+  };
   $('bind-btn').onclick = async () => { try { const mid = $('bind-select').value; if (!mid) return; await api(`/definitions/datasets/${datasetId}/bindings`, { method: 'POST', body: JSON.stringify({ modelDefinitionId: mid }) }); toast('Model bound'); nav(`publish/datasets/${datasetId}`); } catch (err) { toast(err.message, 'error'); } };
   main.querySelectorAll('[data-unbind]').forEach(btn => { btn.onclick = async () => { try { await api(`/definitions/datasets/${datasetId}/bindings/${btn.dataset.unbind}`, { method: 'DELETE' }); toast('Binding removed'); nav(`publish/datasets/${datasetId}`); } catch (err) { toast(err.message, 'error'); } }; });
   main.querySelectorAll('[data-publish]').forEach(btn => { btn.onclick = async () => { try { await api('/publications/publish', { method: 'POST', body: JSON.stringify({ datasetSnapshotId: btn.dataset.publish }) }); toast('Published!'); nav(`publish/datasets/${datasetId}`); } catch (err) { toast(err.message, 'error'); } }; });
