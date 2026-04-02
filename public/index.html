@@ -337,19 +337,24 @@ async function viewDashboard(main) {
   // Fetch all data in parallel
   const [models, entities, proposals, datasets, publications] = await Promise.all([
     api('/definitions/models').catch(() => []),
-    api('/entities?pageSize=1000&status=active').then(r => r.entities || r).catch(() => []),
+    api('/entities?pageSize=1&status=active').catch(() => ({ entities: [], pagination: { total: 0 } })),
     api('/proposals').catch(() => []),
     api('/datasets').catch(() => []),
     api('/publications').catch(() => []),
   ]);
 
   const pending = proposals.filter(p => p.status === 'pending');
-  const active = entities.filter(e => e.status === 'active');
+  const totalActive = entities.pagination?.total ?? 0;
   const recentProposals = proposals.slice(0, 8);
 
-  // Model record counts
+  // Model record counts — query each model individually for accurate counts
   const modelCounts = {};
-  entities.forEach(e => { modelCounts[e.type] = (modelCounts[e.type] || 0) + 1; });
+  await Promise.all(models.map(async (m) => {
+    try {
+      const r = await api(`/entities?type=${m.key}&status=active&pageSize=1`);
+      modelCounts[m.key] = r.pagination?.total ?? 0;
+    } catch { modelCounts[m.key] = 0; }
+  }));
 
   main.innerHTML = `
     <div class="page-header"><h2>Dashboard</h2></div>
@@ -361,8 +366,8 @@ async function viewDashboard(main) {
         <div style="font-size:13px;color:var(--muted)">Models</div>
       </div>
       <div class="card" style="text-align:center;cursor:pointer" onclick="nav('manage/records')">
-        <div style="font-size:28px;font-weight:700;color:var(--text)">${entities.length}</div>
-        <div style="font-size:13px;color:var(--muted)">Records (${active.length} active)</div>
+        <div style="font-size:28px;font-weight:700;color:var(--text)">${totalActive}</div>
+        <div style="font-size:13px;color:var(--muted)">Active Records</div>
       </div>
       <div class="card" style="text-align:center;cursor:pointer" onclick="nav('manage/review')">
         <div style="font-size:28px;font-weight:700;color:${pending.length > 0 ? 'var(--warning)' : 'var(--success)'}">${pending.length}</div>

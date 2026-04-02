@@ -115,13 +115,22 @@ definitionRouter.get("/models/:id/schema", async (req, res, next) => {
 
 // ─── Field Definition Routes ─────────────────────────
 
-// POST /api/v1/definitions/models/:id/fields
+// POST /api/v1/definitions/models/:id/fields (single object or array)
 definitionRouter.post("/models/:id/fields", async (req, res, next) => {
   try {
     const { id } = uuidParam.parse(req.params);
-    const data = createFieldSchema.parse(req.body);
-    const field = await defService.addField(id, data);
-    res.status(201).json(field);
+    if (Array.isArray(req.body)) {
+      const items = req.body.map((b: unknown) => createFieldSchema.parse(b));
+      const fields = [];
+      for (const data of items) {
+        fields.push(await defService.addField(id, data));
+      }
+      res.status(201).json(fields);
+    } else {
+      const data = createFieldSchema.parse(req.body);
+      const field = await defService.addField(id, data);
+      res.status(201).json(field);
+    }
   } catch (err) { next(err); }
 });
 
