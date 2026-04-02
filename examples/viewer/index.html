@@ -57,8 +57,9 @@
     .bar-fill { height: 14px; border-radius: 2px; background: #3b82f6; }
     .bar-count { color: #64748b; min-width: 24px; }
 
-    #map { min-height: 0; }
-    #map3d { min-height: 0; display: none; }
+    .map-container { min-height: 0; position: relative; }
+    #map { position: absolute; inset: 0; }
+    #map3d { position: absolute; inset: 0; display: none; }
 
     .view-toggle { display: flex; gap: 0; }
     .view-toggle button { padding: 4px 10px; border: 1px solid #334155; font-size: 11px; font-weight: 600; cursor: pointer; background: #1e293b; color: #64748b; }
@@ -123,8 +124,10 @@
       <div class="panel-body" id="stats-body"></div>
     </div>
   </div>
-  <div id="map"></div>
-  <div id="map3d"></div>
+  <div class="map-container">
+    <div id="map"></div>
+    <div id="map3d"></div>
+  </div>
   <div class="api-log">
     <div class="api-log-resize" id="log-resize"></div>
     <div class="api-log-header"><span>API Log</span><span id="log-clear" style="cursor:pointer;color:#475569">clear</span></div>
@@ -571,9 +574,11 @@ function switchView(mode) {
   document.getElementById('map3d').style.display = mode === '3d' ? '' : 'none';
 
   if (mode === '3d') {
-    if (!map3d) initMap3d();
-    else update3dData();
-    setTimeout(() => map3d?.resize(), 50);
+    // MapLibre needs the container visible before init
+    setTimeout(() => {
+      if (!map3d) initMap3d();
+      else { map3d.resize(); update3dData(); }
+    }, 100);
   }
 }
 
