@@ -74,7 +74,7 @@
     .log-entry:hover { background: #1e293b; }
     .log-ts { color: #475569; }
     .log-method { color: #4ade80; font-weight: 700; }
-    .log-url { color: #94a3b8; }
+    .log-url { color: #94a3b8; word-break: break-all; }
     .log-status { font-weight: 600; }
     .log-status.ok { color: #4ade80; }
     .log-status.err { color: #f87171; }
@@ -162,7 +162,7 @@ let modelName = '';
 const apiLogs = [];
 async function apiGet(path) {
   const url = `${CMS_URL}${path}`;
-  const shortUrl = path.length > 80 ? path.substring(0, 77) + '...' : path;
+  const shortUrl = path;
   const t0 = performance.now();
   try {
     const res = await fetch(url);
@@ -199,7 +199,7 @@ document.getElementById('log-clear').onclick = () => { apiLogs.length = 0; rende
 function showLogDetail(i) {
   const l = apiLogs[i]; if (!l) return;
   const json = JSON.stringify(l.data, null, 2);
-  document.getElementById('api-log-detail').innerHTML = `<div style="margin-bottom:8px;color:#64748b;font-size:12px"><span class="log-method">${l.method}</span> <span style="color:#e2e8f0">${l.url}</span><br><span class="log-status ${l.ok ? 'ok' : 'err'}">${l.status}</span> · ${l.elapsed}ms · ${l.count} items</div><pre style="margin:0;white-space:pre-wrap;color:#cbd5e1;font-size:11px">${json.length > 5000 ? json.substring(0, 5000) + '\n\n... truncated' : json}</pre>`;
+  document.getElementById('api-log-detail').innerHTML = `<div style="margin-bottom:8px;color:#64748b;font-size:12px"><span class="log-method">${l.method}</span> <span style="color:#e2e8f0">${l.url}</span><br><span class="log-status ${l.ok ? 'ok' : 'err'}">${l.status}</span> · ${l.elapsed}ms · ${l.count} items</div><pre style="margin:0;white-space:pre-wrap;color:#cbd5e1;font-size:11px">${json}</pre>`;
 }
 
 // Resizable API log panel
