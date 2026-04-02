@@ -185,10 +185,14 @@ All `/api/v1/*` routes have CORS enabled (`Access-Control-Allow-Origin: *`) for 
 - `POST /api/v1/ingestion/proposal-set` — batch proposal creation (all pending)
 
 ### Delivery (read-only, for external consumers)
-- `GET /api/v1/delivery/datasets` — list published datasets
-- `GET /api/v1/delivery/datasets/:id` — published dataset metadata
-- `GET /api/v1/delivery/datasets/:id/schema` — model schemas (fields, types, constraints)
-- `GET /api/v1/delivery/datasets/:id/entities` — entities with query support:
+- `GET /api/v1/delivery/datasets` — list published datasets (publishToDelivery=true)
+- `GET /api/v1/delivery/datasets/:id` — dataset metadata (description, license, CRS, etc.)
+- `GET /api/v1/delivery/datasets/:id/schema` — all model schemas
+- `GET /api/v1/delivery/datasets/:id/metadata` — DCAT JSON-LD metadata (for catalogs)
+- `GET /api/v1/delivery/datasets/:id/models` — list models in dataset
+- `GET /api/v1/delivery/datasets/:id/models/:key/schema` — single model schema + CRS
+- `GET /api/v1/delivery/datasets/:id/models/:key/entities` — entities by model type
+- `GET /api/v1/delivery/datasets/:id/entities` — all entities with query support:
   - `?page=1&pageSize=100` — pagination (max 100000)
   - `?bbox=minLon,minLat,maxLon,maxLat` — bounding box spatial query
   - `?near=lon,lat&radius=meters` — proximity search
@@ -198,13 +202,14 @@ All `/api/v1/*` routes have CORS enabled (`Access-Control-Allow-Origin: *`) for 
 - `GET /api/v1/delivery/datasets/:id/entities/:entityId` — single entity
 
 ### OGC API - Features (standard-compliant, for GIS tools)
+Each collection = one model from a publishToOgc=true dataset. Collection ID: `{datasetId}_{modelKey}`.
 - `GET /api/v1/ogc/` — landing page
 - `GET /api/v1/ogc/conformance` — conformance declaration
-- `GET /api/v1/ogc/collections` — published datasets as OGC collections
-- `GET /api/v1/ogc/collections/:id` — collection metadata
-- `GET /api/v1/ogc/collections/:id/schema` — JSON Schema format
-- `GET /api/v1/ogc/collections/:id/items` — GeoJSON FeatureCollection (`?limit=`, `?offset=`, `?bbox=`)
-- `GET /api/v1/ogc/collections/:id/items/:featureId` — single GeoJSON Feature
+- `GET /api/v1/ogc/collections` — per-model collections from OGC-enabled datasets
+- `GET /api/v1/ogc/collections/:collectionId` — collection metadata + CRS
+- `GET /api/v1/ogc/collections/:collectionId/schema` — JSON Schema format
+- `GET /api/v1/ogc/collections/:collectionId/items` — GeoJSON FeatureCollection (`?limit=`, `?offset=`, `?bbox=`)
+- `GET /api/v1/ogc/collections/:collectionId/items/:featureId` — single GeoJSON Feature
 
 ## Frontend Pages (hash routes)
 

@@ -1617,6 +1617,30 @@ async function viewDeliveryDocs(main) {
       <div style="margin-bottom:24px">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
           <span style="font-size:12px;font-weight:700;color:var(--success);background:#dcfce7;padding:2px 8px;border-radius:4px">GET</span>
+          <code style="font-size:14px">/api/v1/delivery/datasets/:id/metadata</code>
+        </div>
+        <p style="color:var(--muted);font-size:13px;margin-bottom:8px">DCAT JSON-LD metadata. Standard format for data catalogs (CKAN, Google Dataset Search). Includes title, description, license, publisher, keywords, distribution links.</p>
+      </div>
+
+      <div style="margin-bottom:24px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="font-size:12px;font-weight:700;color:var(--success);background:#dcfce7;padding:2px 8px;border-radius:4px">GET</span>
+          <code style="font-size:14px">/api/v1/delivery/datasets/:id/models</code>
+        </div>
+        <p style="color:var(--muted);font-size:13px;margin-bottom:8px">List models in this dataset. Each model has its own schema, CRS, and geometry type. Use model key to query entities by type.</p>
+      </div>
+
+      <div style="margin-bottom:24px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="font-size:12px;font-weight:700;color:var(--success);background:#dcfce7;padding:2px 8px;border-radius:4px">GET</span>
+          <code style="font-size:14px">/api/v1/delivery/datasets/:id/models/:key/entities</code>
+        </div>
+        <p style="color:var(--muted);font-size:13px;margin-bottom:8px">Get entities for a specific model. Same query parameters as /entities (pageSize, bbox, near, filter, sort, format). Only returns entities of this model type.</p>
+      </div>
+
+      <div style="margin-bottom:24px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="font-size:12px;font-weight:700;color:var(--success);background:#dcfce7;padding:2px 8px;border-radius:4px">GET</span>
           <code style="font-size:14px">/api/v1/delivery/datasets/:id/entities</code>
         </div>
         <p style="color:var(--muted);font-size:13px;margin-bottom:8px">Query entities in the published snapshot. Supports pagination, spatial queries, filtering, sorting, and GeoJSON output.</p>
@@ -2920,7 +2944,11 @@ const apiEndpoints = [
     { method: 'GET', path: '/delivery/datasets', desc: 'List published datasets' },
     { method: 'GET', path: '/delivery/datasets/:id', desc: 'Published dataset metadata', params: [{ key: 'id', hint: 'Dataset UUID', where: 'path', required: true }] },
     { method: 'GET', path: '/delivery/datasets/:id/schema', desc: 'Dataset model schemas', params: [{ key: 'id', hint: 'Dataset UUID', where: 'path', required: true }] },
-    { method: 'GET', path: '/delivery/datasets/:id/entities', desc: 'Entities (paginated, filterable)', params: [{ key: 'id', hint: 'Dataset UUID', where: 'path', required: true }, { key: 'pageSize', hint: '100', where: 'query' }, { key: 'page', hint: '1', where: 'query' }, { key: 'bbox', hint: '139,35,140,36', where: 'query' }, { key: 'format', hint: 'geojson', where: 'query' }] },
+    { method: 'GET', path: '/delivery/datasets/:id/metadata', desc: 'DCAT JSON-LD metadata', params: [{ key: 'id', hint: 'Dataset UUID', where: 'path', required: true }] },
+    { method: 'GET', path: '/delivery/datasets/:id/models', desc: 'List models in dataset', params: [{ key: 'id', hint: 'Dataset UUID', where: 'path', required: true }] },
+    { method: 'GET', path: '/delivery/datasets/:id/models/:key/schema', desc: 'Single model schema + CRS', params: [{ key: 'id', hint: 'Dataset UUID', where: 'path', required: true }, { key: 'key', hint: 'Model key', where: 'path', required: true }] },
+    { method: 'GET', path: '/delivery/datasets/:id/models/:key/entities', desc: 'Entities by model', params: [{ key: 'id', hint: 'Dataset UUID', where: 'path', required: true }, { key: 'key', hint: 'Model key', where: 'path', required: true }, { key: 'pageSize', hint: '100', where: 'query' }, { key: 'format', hint: 'geojson', where: 'query' }] },
+    { method: 'GET', path: '/delivery/datasets/:id/entities', desc: 'All entities (paginated, filterable)', params: [{ key: 'id', hint: 'Dataset UUID', where: 'path', required: true }, { key: 'pageSize', hint: '100', where: 'query' }, { key: 'page', hint: '1', where: 'query' }, { key: 'bbox', hint: '139,35,140,36', where: 'query' }, { key: 'format', hint: 'geojson', where: 'query' }] },
     { method: 'GET', path: '/delivery/datasets/:id/entities/:entityId', desc: 'Single entity', params: [{ key: 'id', hint: 'Dataset UUID', where: 'path', required: true }, { key: 'entityId', hint: 'Entity UUID', where: 'path', required: true }] },
   ]},
   { group: 'OGC API - Features', endpoints: [
