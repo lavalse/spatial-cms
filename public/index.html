@@ -564,12 +564,13 @@ async function viewContentByModel(main, modelKey) {
   setActiveNav(`manage/records/${modelKey}`);
   const result = await api(`/entities?type=${modelKey}&pageSize=1000&status=active`);
   const entities = result.entities || result;
+  const totalCount = result.pagination?.total ?? entities.length;
   const model = modelCache.find(m => m.key === modelKey);
   const modelName = model?.name || modelKey;
 
   main.innerHTML = `
     <div class="page-header">
-      <div><h2>${modelName}</h2><div class="sub">${entities.length} records</div></div>
+      <div><h2>${modelName}</h2><div class="sub">${totalCount} records${totalCount > entities.length ? ` (showing ${entities.length})` : ''}</div></div>
       <button class="btn btn-primary" onclick="nav('manage/new/${modelKey}')">+ New ${modelName}</button>
     </div>
     ${entities.length ? `<div style="display:flex;gap:12px;margin-bottom:16px">
@@ -593,6 +594,9 @@ async function reloadModelRecords(modelKey) {
   const statusParam = statusFilter ? `&status=${statusFilter}` : '';
   const result = await api(`/entities?type=${modelKey}&pageSize=1000${statusParam}`);
   window._modelEntities = result.entities || result;
+  const total = result.pagination?.total ?? window._modelEntities.length;
+  const sub = document.querySelector('.page-header .sub');
+  if (sub) sub.textContent = `${total} records${total > window._modelEntities.length ? ` (showing ${window._modelEntities.length})` : ''}`;
   filterModelRecords(modelKey);
 }
 
