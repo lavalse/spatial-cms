@@ -251,24 +251,31 @@ export async function governedImport(
     const item = entities[i];
 
     // Use createProposal which handles auto-approval via GovernancePolicy
-    const proposal = await createProposal({
-      proposedChange: {
-        action: "create",
-        data: {
-          type: item.type,
-          properties: item.properties,
-          geometry: item.geometry,
+    try {
+      const proposal = await createProposal({
+        proposedChange: {
+          action: "create",
+          data: {
+            type: item.type,
+            properties: item.properties,
+            geometry: item.geometry,
+          },
         },
-      },
-      source,
-    });
+        source,
+      });
 
-    if (proposal.status === "approved") {
-      approved++;
-    } else {
-      pending++;
+      if (proposal.status === "approved") {
+        approved++;
+      } else {
+        pending++;
+      }
+      results.push({ index: i, status: proposal.status, proposalId: proposal.id });
+    } catch (err: any) {
+      validationErrors.push({ index: i, errors: [err.message || "Failed to create proposal"] });
+      if (!skipInvalid) {
+        return { approved, pending, skipped: invalidIndices.size + 1, total: entities.length, errors: validationErrors, results };
+      }
     }
-    results.push({ index: i, status: proposal.status, proposalId: proposal.id });
   }
 
   return {
