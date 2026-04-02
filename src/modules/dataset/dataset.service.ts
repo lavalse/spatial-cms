@@ -97,14 +97,41 @@ export async function generateSnapshot(datasetDefinitionId: string) {
     });
   }
 
-  // Build manifest
-  const manifest = entities.map((e) => ({
-    entityId: e.id,
-    type: e.type,
-    modelDefinitionId: e.modelDefinitionId,
-    versionNumber: e.versions[0]?.versionNumber ?? 0,
-    snapshot: e.versions[0]?.snapshot ?? null,
-  }));
+  // Build projection map: modelDefinitionId → projectionJson
+  const projectionMap: Record<string, { mode: string; fields: string[] } | null> = {};
+  bindings.forEach((b) => {
+    projectionMap[b.modelDefinitionId] = b.projectionJson as { mode: string; fields: string[] } | null;
+  });
+
+  // Build manifest with field projection applied
+  const manifest = entities.map((e) => {
+    const snapshot = e.versions[0]?.snapshot as Record<string, unknown> | null;
+    let filteredSnapshot = snapshot;
+
+    if (snapshot && e.modelDefinitionId) {
+      const projection = projectionMap[e.modelDefinitionId];
+      if (projection?.fields?.length) {
+        const props = (snapshot.properties ?? {}) as Record<string, unknown>;
+        let filteredProps: Record<string, unknown>;
+        if (projection.mode === "include") {
+          filteredProps = {};
+          projection.fields.forEach((f) => { if (f in props) filteredProps[f] = props[f]; });
+        } else {
+          filteredProps = { ...props };
+          projection.fields.forEach((f) => { delete filteredProps[f]; });
+        }
+        filteredSnapshot = { ...snapshot, properties: filteredProps };
+      }
+    }
+
+    return {
+      entityId: e.id,
+      type: e.type,
+      modelDefinitionId: e.modelDefinitionId,
+      versionNumber: e.versions[0]?.versionNumber ?? 0,
+      snapshot: filteredSnapshot,
+    };
+  });
 
   // Next version number
   const latestSnapshot = await prisma.datasetSnapshot.findFirst({

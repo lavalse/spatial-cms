@@ -268,10 +268,19 @@ export async function getPublishedDatasetSchema(datasetDefinitionId: string) {
     include: { modelDefinition: true },
   });
 
-  // Get schema for each bound model
+  // Get schema for each bound model, applying field projection
   const models = await Promise.all(
     bindings.map(async (b) => {
       const schema = await getModelSchema(b.modelDefinitionId);
+      if (!schema) return null;
+      const projection = b.projectionJson as { mode: string; fields: string[] } | null;
+      if (projection?.fields?.length && schema.fields) {
+        if (projection.mode === "include") {
+          schema.fields = schema.fields.filter((f: any) => projection.fields.includes(f.key));
+        } else {
+          schema.fields = schema.fields.filter((f: any) => !projection.fields.includes(f.key));
+        }
+      }
       return schema;
     }),
   );

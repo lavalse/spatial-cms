@@ -1328,7 +1328,13 @@ async function viewDatasetDetail(main, datasetId) {
     <div style="display:flex;gap:8px"><button class="btn btn-primary" id="gen-snap-btn">Generate Snapshot</button><button class="btn btn-outline btn-sm" style="color:var(--danger)" id="del-ds-btn">Delete Dataset</button></div></div>
 
     <div class="card"><h3>Model Bindings</h3>
-      ${bindings.length ? bindings.map(b => `<div class="field-item"><div class="fi-main"><div class="fi-label">${b.modelDefinition.name}</div><div class="fi-meta">${b.modelDefinition.key}</div></div><button class="btn btn-ghost btn-sm" style="color:var(--danger)" data-unbind="${b.id}">Remove</button></div>`).join('') : '<p style="color:var(--muted);padding:12px 0">No model bindings yet.</p>'}
+      ${bindings.length ? bindings.map(b => {
+        const proj = b.projectionJson;
+        const projLabel = proj?.fields?.length
+          ? `<span style="font-size:11px;color:var(--primary);margin-left:8px">${proj.mode === 'include' ? 'Include' : 'Exclude'}: ${proj.fields.join(', ')}</span>`
+          : '<span style="font-size:11px;color:var(--muted);margin-left:8px">All fields</span>';
+        return `<div class="field-item" style="flex-wrap:wrap"><div class="fi-main" style="flex:1"><div class="fi-label">${b.modelDefinition.name} ${projLabel}</div><div class="fi-meta">${b.modelDefinition.key}</div></div><button class="btn btn-ghost btn-sm" style="color:var(--primary)" data-edit-proj="${b.id}" data-model-id="${b.modelDefinition.id}" data-binding-proj='${JSON.stringify(proj || {})}'>Fields</button><button class="btn btn-ghost btn-sm" style="color:var(--danger)" data-unbind="${b.id}">Remove</button></div>`;
+      }).join('') : '<p style="color:var(--muted);padding:12px 0">No model bindings yet.</p>'}
       <div style="margin-top:12px;display:flex;gap:8px;align-items:end">
         <div class="form-group" style="flex:1;margin:0"><label>Add Model</label><select id="bind-select"><option value="">Select model...</option>${modelCache.map(m=>`<option value="${m.id}">${m.name}</option>`).join('')}</select></div>
         <button class="btn btn-outline btn-sm" id="bind-btn" style="margin-bottom:1px">Add</button>
@@ -1358,6 +1364,72 @@ async function viewDatasetDetail(main, datasetId) {
   };
   $('bind-btn').onclick = async () => { try { const mid = $('bind-select').value; if (!mid) return; await api(`/definitions/datasets/${datasetId}/bindings`, { method: 'POST', body: JSON.stringify({ modelDefinitionId: mid }) }); toast('Model bound'); nav(`publish/datasets/${datasetId}`); } catch (err) { toast(err.message, 'error'); } };
   main.querySelectorAll('[data-unbind]').forEach(btn => { btn.onclick = async () => { try { await api(`/definitions/datasets/${datasetId}/bindings/${btn.dataset.unbind}`, { method: 'DELETE' }); toast('Binding removed'); nav(`publish/datasets/${datasetId}`); } catch (err) { toast(err.message, 'error'); } }; });
+
+  // Field projection editor
+  main.querySelectorAll('[data-edit-proj]').forEach(btn => {
+    btn.onclick = async () => {
+      const bindingId = btn.dataset.editProj;
+      const modelId = btn.dataset.modelId;
+      const currentProj = JSON.parse(btn.dataset.bindingProj || '{}');
+
+      // Load fields for this model
+      const schema = await api(`/definitions/models/${modelId}/schema`);
+      const fields = schema.fields || [];
+      const included = currentProj.fields || [];
+      const mode = currentProj.mode || 'include';
+
+      // Build dialog content
+      const fieldCheckboxes = fields.map(f => {
+        const checked = mode === 'include'
+          ? (included.length === 0 || included.includes(f.key))
+          : !included.includes(f.key);
+        return `<label style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:13px;cursor:pointer"><input type="checkbox" data-fkey="${f.key}" ${checked ? 'checked' : ''}> ${f.label} <span style="color:var(--muted);font-size:11px">(${f.key})</span></label>`;
+      }).join('');
+
+      // Insert inline editor
+      const editorId = `proj-editor-${bindingId}`;
+      let editor = document.getElementById(editorId);
+      if (editor) { editor.remove(); return; }
+      editor = document.createElement('div');
+      editor.id = editorId;
+      editor.style.cssText = 'padding:12px;margin:8px 0;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius)';
+      editor.innerHTML = `
+        <div style="font-size:12px;font-weight:600;color:var(--muted);margin-bottom:8px">Select fields to include in this dataset:</div>
+        <div style="margin-bottom:8px;display:flex;gap:8px">
+          <button class="btn btn-outline btn-sm" id="${editorId}-all">Select All</button>
+          <button class="btn btn-outline btn-sm" id="${editorId}-none">Select None</button>
+        </div>
+        ${fieldCheckboxes}
+        <div style="margin-top:12px;display:flex;gap:8px">
+          <button class="btn btn-primary btn-sm" id="${editorId}-save">Save Projection</button>
+          <button class="btn btn-outline btn-sm" id="${editorId}-clear">Clear (all fields)</button>
+          <button class="btn btn-outline btn-sm" onclick="document.getElementById('${editorId}').remove()">Cancel</button>
+        </div>`;
+      btn.closest('.field-item').after(editor);
+
+      document.getElementById(`${editorId}-all`).onclick = () => { editor.querySelectorAll('input[type=checkbox]').forEach(c => c.checked = true); };
+      document.getElementById(`${editorId}-none`).onclick = () => { editor.querySelectorAll('input[type=checkbox]').forEach(c => c.checked = false); };
+
+      document.getElementById(`${editorId}-save`).onclick = async () => {
+        const selected = [...editor.querySelectorAll('input[data-fkey]:checked')].map(c => c.dataset.fkey);
+        const allSelected = selected.length === fields.length;
+        const projectionJson = allSelected ? null : { mode: 'include', fields: selected };
+        try {
+          await api(`/definitions/datasets/${datasetId}/bindings/${bindingId}`, { method: 'PUT', body: JSON.stringify({ projectionJson }) });
+          toast('Field projection saved');
+          nav(`publish/datasets/${datasetId}`);
+        } catch (err) { toast(err.message, 'error'); }
+      };
+
+      document.getElementById(`${editorId}-clear`).onclick = async () => {
+        try {
+          await api(`/definitions/datasets/${datasetId}/bindings/${bindingId}`, { method: 'PUT', body: JSON.stringify({ projectionJson: null }) });
+          toast('Projection cleared — all fields included');
+          nav(`publish/datasets/${datasetId}`);
+        } catch (err) { toast(err.message, 'error'); }
+      };
+    };
+  });
   main.querySelectorAll('[data-publish]').forEach(btn => { btn.onclick = async () => { try { await api('/publications/publish', { method: 'POST', body: JSON.stringify({ datasetSnapshotId: btn.dataset.publish }) }); toast('Published!'); nav(`publish/datasets/${datasetId}`); } catch (err) { toast(err.message, 'error'); } }; });
 
   // Load publication history for this dataset's snapshots

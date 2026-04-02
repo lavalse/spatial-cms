@@ -210,6 +210,17 @@ export async function listBindings(datasetDefinitionId: string) {
   });
 }
 
+export async function updateBinding(id: string, data: { filterJson?: object | null; projectionJson?: object | null }) {
+  return prisma.datasetModelBinding.update({
+    where: { id },
+    data: {
+      filterJson: data.filterJson === null ? null : data.filterJson,
+      projectionJson: data.projectionJson === null ? null : data.projectionJson,
+    },
+    include: { modelDefinition: true },
+  });
+}
+
 export async function removeBinding(id: string) {
   return prisma.datasetModelBinding.delete({ where: { id } });
 }

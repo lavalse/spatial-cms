@@ -197,6 +197,15 @@ definitionRouter.get("/datasets/:datasetId/bindings", async (req, res, next) => 
   } catch (err) { next(err); }
 });
 
+// PUT /api/v1/definitions/datasets/:datasetId/bindings/:bindingId
+definitionRouter.put("/datasets/:datasetId/bindings/:bindingId", async (req, res, next) => {
+  try {
+    const bindingId = z.string().uuid().parse(req.params.bindingId);
+    const binding = await defService.updateBinding(bindingId, req.body);
+    res.json(binding);
+  } catch (err) { next(err); }
+});
+
 // DELETE /api/v1/definitions/datasets/:datasetId/bindings/:bindingId
 definitionRouter.delete("/datasets/:datasetId/bindings/:bindingId", async (req, res, next) => {
   try {
