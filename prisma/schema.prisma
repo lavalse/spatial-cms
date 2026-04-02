@@ -95,7 +95,7 @@ model Entity {
   type              String
   modelDefinitionId String?           @map("model_definition_id") @db.Uuid
   properties        Json              @default("{}")
-  geometry          Unsupported("geometry(GeometryZ, 4326)")?
+  geometry          Unsupported("geometry")?
   status            EntityStatus      @default(draft)
   createdAt         DateTime          @default(now()) @map("created_at")
   updatedAt         DateTime          @updatedAt @map("updated_at")
@@ -205,6 +205,7 @@ model ModelDefinition {
   name         String
   description  String?
   geometryType GeometryType @default(NONE) @map("geometry_type")
+  is3D         Boolean      @default(false) @map("is_3d")
   createdAt    DateTime     @default(now()) @map("created_at")
   updatedAt    DateTime     @updatedAt @map("updated_at")
 

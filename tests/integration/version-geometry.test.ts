@@ -98,9 +98,7 @@ describe("Version snapshot geometry preservation", () => {
       "Version snapshot should preserve geometry after status-only update",
     );
     assert.strictEqual(latest.snapshot.geometry.type, "Point");
-    // Coordinates may have Z=0 added by ST_Force3D
-    assert.strictEqual(latest.snapshot.geometry.coordinates[0], 139.7);
-    assert.strictEqual(latest.snapshot.geometry.coordinates[1], 35.6);
+    assert.deepStrictEqual(latest.snapshot.geometry.coordinates, [139.7, 35.6]);
   });
 
   it("should preserve geometry when only properties are updated", async () => {
@@ -161,7 +159,6 @@ describe("Version snapshot geometry preservation", () => {
     );
     const latest = versions[0];
     assert.ok(latest.snapshot.geometry);
-    assert.strictEqual(latest.snapshot.geometry.coordinates[0], 140.0);
-    assert.strictEqual(latest.snapshot.geometry.coordinates[1], 36.0);
+    assert.deepStrictEqual(latest.snapshot.geometry.coordinates, [140.0, 36.0]);
   });
 });
