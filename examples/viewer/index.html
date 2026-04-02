@@ -478,9 +478,14 @@ async function loadDataset(datasetId) {
 // ─── Load map data ───
 async function loadMapData() {
   if (!DATASET_ID) return;
-  const bounds = map.getBounds();
-  const bbox = `${bounds.getWest().toFixed(4)},${bounds.getSouth().toFixed(4)},${bounds.getEast().toFixed(4)},${bounds.getNorth().toFixed(4)}`;
-  await loadMapDataCustom(`bbox=${bbox}`);
+  const pageSizeVal = document.getElementById('page-size').value;
+  if (pageSizeVal === 'all') {
+    await loadMapDataCustom('');
+  } else {
+    const bounds = map.getBounds();
+    const bbox = `bbox=${bounds.getWest().toFixed(4)},${bounds.getSouth().toFixed(4)},${bounds.getEast().toFixed(4)},${bounds.getNorth().toFixed(4)}`;
+    await loadMapDataCustom(bbox);
+  }
 }
 
 async function loadMapDataCustom(spatialParam) {
@@ -492,7 +497,8 @@ async function loadMapDataCustom(spatialParam) {
   const pageSizeParam = pageSizeVal === 'all' ? 'pageSize=10000' : `pageSize=${pageSizeVal}`;
 
   try {
-    const mapPath = `/delivery/datasets/${DATASET_ID}/entities?${spatialParam}&${pageSizeParam}&format=geojson${filterParam}`;
+    const params = [spatialParam, pageSizeParam, 'format=geojson'].filter(Boolean).join('&');
+    const mapPath = `/delivery/datasets/${DATASET_ID}/entities?${params}${filterParam}`;
     const fc = await apiGet(mapPath);
     lastGeoJsonData = fc;
     let mapFeatures = fc.features || [];
