@@ -80,6 +80,7 @@ export async function getPublishedDataset(datasetDefinitionId: string) {
     contactName: d.contactName,
     contactEmail: d.contactEmail,
     keywords: d.keywords,
+    publishToOgc: d.publishToOgc,
     snapshot: {
       id: release.activeSnapshotId,
       version: release.activeSnapshot.version,

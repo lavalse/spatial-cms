@@ -150,6 +150,19 @@ deliveryRouter.get("/datasets/:id/metadata", async (req, res, next) => {
     const models = await deliveryService.listPublishedDatasetModels(id);
     const baseUrl = `${req.protocol}://${req.get("host")}/api/v1`;
 
+    // Check OGC channel
+    const ogcEnabled = dataset.publishToOgc ?? false;
+
+    const distributions = [
+      { "@type": "Distribution", "title": "Delivery API (JSON)", "format": "application/json", "accessURL": `${baseUrl}/delivery/datasets/${id}/entities` },
+      { "@type": "Distribution", "title": "Delivery API (GeoJSON)", "format": "application/geo+json", "accessURL": `${baseUrl}/delivery/datasets/${id}/entities?format=geojson` },
+    ];
+    if (ogcEnabled && models) {
+      for (const m of models) {
+        distributions.push({ "@type": "Distribution", "title": `OGC API - ${m.name}`, "format": "application/geo+json", "accessURL": `${baseUrl}/ogc/collections/${id}_${m.key}/items` });
+      }
+    }
+
     res.json({
       "@context": "https://www.w3.org/ns/dcat#",
       "@type": "Dataset",
@@ -161,13 +174,7 @@ deliveryRouter.get("/datasets/:id/metadata", async (req, res, next) => {
       "keyword": dataset.keywords || [],
       "issued": dataset.snapshot.publishedAt,
       "spatial": models?.[0] ? { "@type": "Location", "crs": `EPSG:${models[0].srid}` } : undefined,
-      "distribution": [
-        { "@type": "Distribution", "title": "Delivery API (JSON)", "format": "application/json", "accessURL": `${baseUrl}/delivery/datasets/${id}/entities` },
-        { "@type": "Distribution", "title": "Delivery API (GeoJSON)", "format": "application/geo+json", "accessURL": `${baseUrl}/delivery/datasets/${id}/entities?format=geojson` },
-        ...(models || []).map(m => ({
-          "@type": "Distribution", "title": `OGC API - ${m.name}`, "format": "application/geo+json", "accessURL": `${baseUrl}/ogc/collections/${id}_${m.key}/items`,
-        })),
-      ],
+      "distribution": distributions,
     });
   } catch (err) { next(err); }
 });
