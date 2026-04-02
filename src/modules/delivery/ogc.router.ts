@@ -74,7 +74,7 @@ ogcRouter.get("/collections", async (req, res, next) => {
         collections.push({
           id: collectionId,
           title: b.modelDefinition.name,
-          description: `${b.modelDefinition.key} from ${d.name}`,
+          description: d.description || `${b.modelDefinition.key} from ${d.name}`,
           links: [
             { rel: "self", href: `${base}/collections/${collectionId}`, type: "application/json" },
             { rel: "items", href: `${base}/collections/${collectionId}/items`, type: "application/geo+json" },

@@ -141,6 +141,37 @@ deliveryRouter.get("/datasets/:id/entities", async (req, res, next) => {
   }
 });
 
+// GET /api/v1/delivery/datasets/:id/metadata (DCAT JSON-LD)
+deliveryRouter.get("/datasets/:id/metadata", async (req, res, next) => {
+  try {
+    const { id } = uuidParam.parse(req.params);
+    const dataset = await deliveryService.getPublishedDataset(id);
+    if (!dataset) return res.status(404).json({ error: "Dataset not published or not found" });
+    const models = await deliveryService.listPublishedDatasetModels(id);
+    const baseUrl = `${req.protocol}://${req.get("host")}/api/v1`;
+
+    res.json({
+      "@context": "https://www.w3.org/ns/dcat#",
+      "@type": "Dataset",
+      "title": dataset.name,
+      "description": dataset.description || "",
+      "license": dataset.license || "",
+      "publisher": dataset.contactName ? { "@type": "Organization", "name": dataset.contactName, "mbox": dataset.contactEmail } : undefined,
+      "source": dataset.source || undefined,
+      "keyword": dataset.keywords || [],
+      "issued": dataset.snapshot.publishedAt,
+      "spatial": models?.[0] ? { "@type": "Location", "crs": `EPSG:${models[0].srid}` } : undefined,
+      "distribution": [
+        { "@type": "Distribution", "title": "Delivery API (JSON)", "format": "application/json", "accessURL": `${baseUrl}/delivery/datasets/${id}/entities` },
+        { "@type": "Distribution", "title": "Delivery API (GeoJSON)", "format": "application/geo+json", "accessURL": `${baseUrl}/delivery/datasets/${id}/entities?format=geojson` },
+        ...(models || []).map(m => ({
+          "@type": "Distribution", "title": `OGC API - ${m.name}`, "format": "application/geo+json", "accessURL": `${baseUrl}/ogc/collections/${id}_${m.key}/items`,
+        })),
+      ],
+    });
+  } catch (err) { next(err); }
+});
+
 // GET /api/v1/delivery/datasets/:id/entities/:entityId
 deliveryRouter.get("/datasets/:id/entities/:entityId", async (req, res, next) => {
   try {

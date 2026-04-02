@@ -149,6 +149,12 @@ model DatasetDefinition {
   primaryGeometryRule Json?    @map("primary_geometry_rule")
   publishToDelivery   Boolean  @default(true)  @map("publish_to_delivery")
   publishToOgc        Boolean  @default(false) @map("publish_to_ogc")
+  description         String?
+  license             String?
+  source              String?
+  contactName         String?  @map("contact_name")
+  contactEmail        String?  @map("contact_email")
+  keywords            Json?    @default("[]")
   createdAt           DateTime @default(now()) @map("created_at")
 
   snapshots          DatasetSnapshot[]

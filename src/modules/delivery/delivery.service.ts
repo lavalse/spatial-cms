@@ -42,6 +42,9 @@ export async function listPublishedDatasets(channel?: 'delivery' | 'ogc') {
   return releases.map((r) => ({
     id: r.datasetDefinitionId,
     name: r.datasetDefinition.name,
+    description: r.datasetDefinition.description,
+    license: r.datasetDefinition.license,
+    source: r.datasetDefinition.source,
     snapshot: {
       id: r.activeSnapshotId,
       version: r.activeSnapshot.version,
@@ -67,9 +70,16 @@ export async function getPublishedDataset(datasetDefinitionId: string) {
 
   const manifest = release.activeSnapshot.manifest as ManifestItem[];
 
+  const d = release.datasetDefinition;
   return {
     id: release.datasetDefinitionId,
-    name: release.datasetDefinition.name,
+    name: d.name,
+    description: d.description,
+    license: d.license,
+    source: d.source,
+    contactName: d.contactName,
+    contactEmail: d.contactEmail,
+    keywords: d.keywords,
     snapshot: {
       id: release.activeSnapshotId,
       version: release.activeSnapshot.version,
