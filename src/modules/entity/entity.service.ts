@@ -4,6 +4,7 @@ import {
   setEntityGeometry,
   findEntitiesInBBox,
   findEntitiesNearPoint,
+  getSridForType,
 } from "../../shared/geometry.js";
 import { findModelDefinitionByKey } from "../../shared/dynamic-validation.js";
 import { BusinessError, NotFoundError } from "../../shared/errors.js";
@@ -25,16 +26,19 @@ export async function listEntities(options: ListOptions = {}) {
   if (options.status) where.status = options.status;
   if (options.modelDefinitionId) where.modelDefinitionId = options.modelDefinitionId;
 
-  // Spatial filtering: get matching IDs first
+  // Spatial filtering: get matching IDs first, using model's SRID
   if (options.bbox || options.near) {
+    // Resolve SRID from model type if available
+    const srid = options.type ? await getSridForType(options.type) : 4326;
     let spatialIds: string[];
     if (options.bbox) {
-      spatialIds = await findEntitiesInBBox(options.bbox);
+      spatialIds = await findEntitiesInBBox(options.bbox, srid);
     } else {
       spatialIds = await findEntitiesNearPoint(
         options.near!.lon,
         options.near!.lat,
         options.near!.radius,
+        srid,
       );
     }
     if (!spatialIds.length) {
@@ -140,7 +144,10 @@ export async function createEntityInternal(data: {
   });
 
   if (data.geometry) {
-    await setEntityGeometry(entity.id, data.geometry);
+    const srid = (modelDefId
+      ? (await prisma.modelDefinition.findUnique({ where: { id: modelDefId } }))?.srid
+      : null) ?? 4326;
+    await setEntityGeometry(entity.id, data.geometry, srid);
   }
 
   await prisma.entityVersion.create({
@@ -213,7 +220,11 @@ export async function updateEntityInternal(
 
   // Geometry update is outside transaction (raw SQL via PostGIS)
   if (changes.geometry) {
-    await setEntityGeometry(id, changes.geometry);
+    const ent = await prisma.entity.findUnique({ where: { id } });
+    const srid = ent?.modelDefinitionId
+      ? (await prisma.modelDefinition.findUnique({ where: { id: ent.modelDefinitionId } }))?.srid ?? 4326
+      : 4326;
+    await setEntityGeometry(id, changes.geometry, srid);
   }
 
   // Patch the version snapshot with actual geometry from PostGIS

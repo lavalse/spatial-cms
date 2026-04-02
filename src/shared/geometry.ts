@@ -7,14 +7,15 @@ interface GeoJsonGeometry {
   coordinates: unknown;
 }
 
-/** Set geometry on an entity from GeoJSON (accepts both 2D and 3D) */
+/** Set geometry on an entity from GeoJSON (accepts both 2D and 3D, any SRID) */
 export async function setEntityGeometry(
   entityId: string,
   geojson: GeoJsonGeometry,
+  srid: number = 4326,
 ): Promise<void> {
   await prisma.$executeRaw`
     UPDATE entity
-    SET geometry = ST_SetSRID(ST_GeomFromGeoJSON(${JSON.stringify(geojson)}), 4326)
+    SET geometry = ST_SetSRID(ST_GeomFromGeoJSON(${JSON.stringify(geojson)}), ${srid}::int)
     WHERE id = ${entityId}::uuid
   `;
 }
@@ -66,31 +67,39 @@ export async function getEntityWithGeometry(entityId: string) {
   };
 }
 
-/** Find entities within a bounding box [minLon, minLat, maxLon, maxLat] */
+/** Find entities within a bounding box [min1, min2, max1, max2] with configurable SRID */
 export async function findEntitiesInBBox(
   bbox: [number, number, number, number],
+  srid: number = 4326,
 ): Promise<string[]> {
-  const [minLon, minLat, maxLon, maxLat] = bbox;
+  const [min1, min2, max1, max2] = bbox;
   const rows = await prisma.$queryRaw<{ id: string }[]>`
     SELECT id FROM entity
-    WHERE geometry && ST_MakeEnvelope(${minLon}, ${minLat}, ${maxLon}, ${maxLat}, 4326)
+    WHERE geometry && ST_MakeEnvelope(${min1}, ${min2}, ${max1}, ${max2}, ${srid}::int)
   `;
   return rows.map((r) => r.id);
 }
 
-/** Find entities within a radius (meters) of a point */
+/** Find entities within a radius (meters) of a point with configurable SRID */
 export async function findEntitiesNearPoint(
-  lon: number,
-  lat: number,
+  x: number,
+  y: number,
   radiusMeters: number,
+  srid: number = 4326,
 ): Promise<string[]> {
   const rows = await prisma.$queryRaw<{ id: string }[]>`
     SELECT id FROM entity
     WHERE ST_DWithin(
       geometry::geography,
-      ST_SetSRID(ST_MakePoint(${lon}, ${lat}), 4326)::geography,
+      ST_SetSRID(ST_MakePoint(${x}, ${y}), ${srid}::int)::geography,
       ${radiusMeters}
     )
   `;
   return rows.map((r) => r.id);
+}
+
+/** Look up SRID for a model type */
+export async function getSridForType(type: string): Promise<number> {
+  const model = await prisma.modelDefinition.findUnique({ where: { key: type } });
+  return model?.srid ?? 4326;
 }

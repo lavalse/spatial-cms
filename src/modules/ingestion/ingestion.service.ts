@@ -65,12 +65,14 @@ export async function bulkImport(
 ) {
   const { skipInvalid = false } = options;
 
-  // Resolve modelDefinitionId for each entity type
+  // Resolve modelDefinitionId and SRID for each entity type
   const modelCache: Record<string, string | null> = {};
+  const sridCache: Record<string, number> = {};
   for (const item of entities) {
     if (!(item.type in modelCache)) {
       const model = await findModelDefinitionByKey(item.type);
       modelCache[item.type] = model?.id ?? null;
+      sridCache[item.type] = model?.srid ?? 4326;
     }
   }
 
@@ -121,7 +123,8 @@ export async function bulkImport(
     });
 
     if (item.geometry) {
-      await setEntityGeometry(entity.id, item.geometry);
+      const srid = sridCache[item.type] ?? 4326;
+      await setEntityGeometry(entity.id, item.geometry, srid);
     }
 
     await prisma.entityVersion.create({

@@ -101,14 +101,21 @@ export async function getPublishedEntities(
 
   let manifest = release.activeSnapshot.manifest as ManifestItem[];
 
+  // Resolve SRID from dataset's bound models (use first model's SRID)
+  const bindings = await prisma.datasetModelBinding.findMany({
+    where: { datasetDefinitionId },
+    include: { modelDefinition: true },
+  });
+  const datasetSrid = bindings[0]?.modelDefinition?.srid ?? 4326;
+
   // Step 1: Spatial filtering (bbox or near point)
   if (bbox || near) {
     let spatialIds: Set<string>;
     if (bbox) {
-      const ids = await findEntitiesInBBox(bbox);
+      const ids = await findEntitiesInBBox(bbox, datasetSrid);
       spatialIds = new Set(ids);
     } else {
-      const ids = await findEntitiesNearPoint(near!.lon, near!.lat, near!.radius);
+      const ids = await findEntitiesNearPoint(near!.lon, near!.lat, near!.radius, datasetSrid);
       spatialIds = new Set(ids);
     }
     // Intersect with manifest
@@ -210,6 +217,7 @@ export async function getPublishedEntities(
         page,
         pageSize: clampedPageSize,
         totalPages,
+        crs: `EPSG:${datasetSrid}`,
       },
     };
   }
@@ -217,6 +225,7 @@ export async function getPublishedEntities(
   return {
     dataset: datasetMeta,
     pagination: { total, page, pageSize: clampedPageSize, totalPages },
+    crs: `EPSG:${datasetSrid}`,
     entities,
   };
 }

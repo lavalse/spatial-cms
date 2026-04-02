@@ -206,6 +206,7 @@ model ModelDefinition {
   description  String?
   geometryType GeometryType @default(NONE) @map("geometry_type")
   is3D         Boolean      @default(false) @map("is_3d")
+  srid         Int          @default(4326)
   createdAt    DateTime     @default(now()) @map("created_at")
   updatedAt    DateTime     @updatedAt @map("updated_at")
 
