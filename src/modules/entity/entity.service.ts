@@ -47,7 +47,7 @@ export async function listEntities(options: ListOptions = {}) {
   const total = await prisma.entity.count({ where });
 
   // Pagination
-  const pageSize = Math.min(Math.max(options.pageSize || 100, 1), 1000);
+  const pageSize = Math.min(Math.max(options.pageSize || 100, 1), 100000);
   const page = Math.max(options.page || 1, 1);
   const totalPages = Math.ceil(total / pageSize);
 

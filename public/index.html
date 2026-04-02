@@ -586,6 +586,7 @@ async function viewContentByModel(main, modelKey) {
     return;
   }
   window._modelEntities = entities;
+  window._modelTotal = totalCount;
   filterModelRecords(modelKey);
 }
 
@@ -595,6 +596,7 @@ async function reloadModelRecords(modelKey) {
   const result = await api(`/entities?type=${modelKey}&pageSize=1000${statusParam}`);
   window._modelEntities = result.entities || result;
   const total = result.pagination?.total ?? window._modelEntities.length;
+  window._modelTotal = total;
   const sub = document.querySelector('.page-header .sub');
   if (sub) sub.textContent = `${total} records${total > window._modelEntities.length ? ` (showing ${window._modelEntities.length})` : ''}`;
   filterModelRecords(modelKey);
@@ -629,6 +631,12 @@ function filterModelRecords(modelKey) {
         ${e.status === 'archived' ? `<button class="btn btn-ghost btn-sm" style="color:var(--success)" onclick="restoreOneModel('${e.id}','${modelKey}')">Restore</button><button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="purgeOneModel('${e.id}','${modelKey}','${(e.properties?.name||'').replace(/'/g,'\\&#39;')}')">Purge</button>` : ''}
       </td>
     </tr>`).join('')}</tbody></table>`;
+
+  // Show truncation notice
+  const total = window._modelTotal || 0;
+  if (total > entities.length) {
+    html += `<div style="padding:12px;text-align:center;color:var(--muted);font-size:13px;border:1px dashed var(--border);border-radius:var(--radius);margin-top:8px">Showing ${entities.length} of ${total} records. Use status filter or search to narrow results.</div>`;
+  }
   container.innerHTML = html;
 }
 

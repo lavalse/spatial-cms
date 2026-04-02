@@ -161,7 +161,7 @@ ogcRouter.get("/collections/:id/items", async (req, res, next) => {
     const query = req.query;
 
     // OGC params → QueryOptions
-    const limit = Math.min(Math.max(parseInt(String(query.limit)) || 10, 1), 1000);
+    const limit = Math.min(Math.max(parseInt(String(query.limit)) || 10, 1), 100000);
     const offset = Math.max(parseInt(String(query.offset)) || 0, 0);
     const page = Math.floor(offset / limit) + 1;
 

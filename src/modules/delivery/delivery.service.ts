@@ -97,7 +97,7 @@ export async function getPublishedEntities(
     sort,
     format = "json",
   } = options;
-  const clampedPageSize = Math.min(Math.max(pageSize, 1), 10000);
+  const clampedPageSize = Math.min(Math.max(pageSize, 1), 100000);
 
   let manifest = release.activeSnapshot.manifest as ManifestItem[];
 
