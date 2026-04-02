@@ -4,8 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Spatial CMS Viewer</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <style>
@@ -57,15 +55,15 @@
     .bar-fill { height: 14px; border-radius: 2px; background: #3b82f6; }
     .bar-count { color: #64748b; min-width: 24px; }
 
-    .map-container { min-height: 0; position: relative; }
-    #map { position: absolute; inset: 0; }
-    #map3d { position: absolute; inset: 0; display: none; }
+    #map { min-height: 0; }
 
     .view-toggle { display: flex; gap: 0; }
     .view-toggle button { padding: 4px 10px; border: 1px solid #334155; font-size: 11px; font-weight: 600; cursor: pointer; background: #1e293b; color: #64748b; }
     .view-toggle button:first-child { border-radius: 4px 0 0 4px; }
     .view-toggle button:last-child { border-radius: 0 4px 4px 0; border-left: none; }
     .view-toggle button.active { background: #3b82f6; color: #fff; border-color: #3b82f6; }
+
+    .map-tool-btn { position: absolute; z-index: 2; background: #fff; border: 2px solid rgba(0,0,0,0.2); border-radius: 4px; padding: 6px 10px; cursor: pointer; font-size: 13px; font-weight: 600; }
 
     .api-log { grid-column: 1 / -1; background: #0f172a; border-top: 1px solid #1e293b; display: flex; flex-direction: column; position: relative; }
     .api-log-resize { height: 5px; cursor: ns-resize; position: absolute; top: -3px; left: 0; right: 0; z-index: 10; }
@@ -124,10 +122,7 @@
       <div class="panel-body" id="stats-body"></div>
     </div>
   </div>
-  <div class="map-container">
-    <div id="map"></div>
-    <div id="map3d"></div>
-  </div>
+  <div id="map"></div>
   <div class="api-log">
     <div class="api-log-resize" id="log-resize"></div>
     <div class="api-log-header"><span>API Log</span><span id="log-clear" style="cursor:pointer;color:#475569">clear</span></div>
@@ -147,17 +142,16 @@ const CMS_URL = window.location.hostname === 'localhost'
 let DATASET_ID = '';
 let schemaData = null;
 let selectedId = null;
-let geoJsonLayer = null;
 let activeFilter = '';
 let loadTimer = null;
+let lastGeoJsonData = null;
+let mapReady = false;
 
-// Schema-derived field roles
-let titleField = null;     // first string field → list title
-let subtitleFields = [];   // other short fields → list subtitle
-let enumField = null;      // first enum field → filter chips
-let numberField = null;    // first number field → stats
+let titleField = null;
+let subtitleFields = [];
+let enumField = null;
+let numberField = null;
 let modelName = '';
-let geometryType = 'MIXED';
 
 // ─── API with logging ───
 const apiLogs = [];
@@ -197,6 +191,11 @@ function renderApiLog() {
   if (apiLogs.length) { showLogDetail(0); el.querySelector('.log-entry')?.setAttribute('style', 'cursor:pointer;background:#1e293b'); }
 }
 document.getElementById('log-clear').onclick = () => { apiLogs.length = 0; renderApiLog(); document.getElementById('api-log-detail').innerHTML = '<span style="color:#475569">Click a request to view response</span>'; };
+function showLogDetail(i) {
+  const l = apiLogs[i]; if (!l) return;
+  const json = JSON.stringify(l.data, null, 2);
+  document.getElementById('api-log-detail').innerHTML = `<div style="margin-bottom:8px;color:#64748b;font-size:12px"><span class="log-method">${l.method}</span> <span style="color:#e2e8f0">${l.url}</span><br><span class="log-status ${l.ok ? 'ok' : 'err'}">${l.status}</span> · ${l.elapsed}ms · ${l.count} items</div><pre style="margin:0;white-space:pre-wrap;color:#cbd5e1;font-size:11px">${json.length > 5000 ? json.substring(0, 5000) + '\n\n... truncated' : json}</pre>`;
+}
 
 // Resizable API log panel
 (function() {
@@ -209,70 +208,189 @@ document.getElementById('log-clear').onclick = () => { apiLogs.length = 0; rende
     const onMove = (e) => {
       const newH = Math.max(80, Math.min(600, startH + (startY - e.clientY)));
       document.querySelector('.app').style.setProperty('--log-height', newH + 'px');
-      map.invalidateSize();
+      map.resize();
     };
     const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
   };
 })();
-function showLogDetail(i) {
-  const l = apiLogs[i]; if (!l) return;
-  const json = JSON.stringify(l.data, null, 2);
-  document.getElementById('api-log-detail').innerHTML = `<div style="margin-bottom:8px;color:#64748b;font-size:12px"><span class="log-method">${l.method}</span> <span style="color:#e2e8f0">${l.url}</span><br><span class="log-status ${l.ok ? 'ok' : 'err'}">${l.status}</span> · ${l.elapsed}ms · ${l.count} items</div><pre style="margin:0;white-space:pre-wrap;color:#cbd5e1;font-size:11px">${json.length > 5000 ? json.substring(0, 5000) + '\n\n... truncated' : json}</pre>`;
+
+// ─── Map (MapLibre GL JS) ───
+const map = new maplibregl.Map({
+  container: 'map',
+  style: {
+    version: 8,
+    sources: {
+      'osm': {
+        type: 'raster',
+        tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+        tileSize: 256,
+        attribution: '&copy; OpenStreetMap',
+      }
+    },
+    layers: [{ id: 'basemap', type: 'raster', source: 'osm' }],
+  },
+  center: [139.783, 35.715],
+  zoom: 14,
+  pitch: 0,
+  bearing: 0,
+  antialias: true,
+});
+
+map.on('load', () => {
+  mapReady = true;
+
+  // Entity data source
+  map.addSource('entities', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+
+  // Search overlays source (bbox rect, near circle)
+  map.addSource('search-overlay', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+
+  // Polygon fill (2D)
+  map.addLayer({ id: 'entities-fill', type: 'fill', source: 'entities',
+    filter: ['!=', ['geometry-type'], 'Point'],
+    paint: { 'fill-color': '#60a5fa', 'fill-opacity': 0.25, 'fill-outline-color': '#3b82f6' }
+  });
+
+  // 3D extrusion
+  map.addLayer({ id: 'entities-3d', type: 'fill-extrusion', source: 'entities',
+    filter: ['all', ['!=', ['geometry-type'], 'Point'], ['has', '_height']],
+    paint: {
+      'fill-extrusion-color': ['interpolate', ['linear'], ['get', '_height'], 0, '#60a5fa', 20, '#818cf8', 50, '#a78bfa', 100, '#c084fc'],
+      'fill-extrusion-height': ['get', '_height'],
+      'fill-extrusion-base': 0,
+      'fill-extrusion-opacity': 0.8,
+    }
+  });
+
+  // Polygon outline
+  map.addLayer({ id: 'entities-line', type: 'line', source: 'entities',
+    filter: ['!=', ['geometry-type'], 'Point'],
+    paint: { 'line-color': '#3b82f6', 'line-width': 1 }
+  });
+
+  // Points
+  map.addLayer({ id: 'entities-points', type: 'circle', source: 'entities',
+    filter: ['==', ['geometry-type'], 'Point'],
+    paint: { 'circle-radius': 5, 'circle-color': '#60a5fa', 'circle-stroke-width': 1, 'circle-stroke-color': '#3b82f6' }
+  });
+
+  // Search overlay
+  map.addLayer({ id: 'search-fill', type: 'fill', source: 'search-overlay',
+    paint: { 'fill-color': '#3b82f6', 'fill-opacity': 0.08 }
+  });
+  map.addLayer({ id: 'search-line', type: 'line', source: 'search-overlay',
+    paint: { 'line-color': '#3b82f6', 'line-width': 2, 'line-dasharray': [4, 4] }
+  });
+
+  // Click entity
+  ['entities-fill', 'entities-3d', 'entities-points'].forEach(layerId => {
+    map.on('click', layerId, (e) => {
+      if (e.features?.length) {
+        const f = e.features[0];
+        const feature = lastGeoJsonData?.features?.find(x => x.id === f.properties._id) || f;
+        selectFeature(feature, e.lngLat);
+      }
+    });
+    map.on('mouseenter', layerId, () => { map.getCanvas().style.cursor = 'pointer'; });
+    map.on('mouseleave', layerId, () => { if (!drawingBox && !nearMode) map.getCanvas().style.cursor = ''; });
+  });
+});
+
+// ─── 2D/3D toggle ───
+function switchView(mode) {
+  document.getElementById('btn-2d').classList.toggle('active', mode === '2d');
+  document.getElementById('btn-3d').classList.toggle('active', mode === '3d');
+  if (mode === '3d') {
+    map.easeTo({ pitch: 60, bearing: -20, duration: 800 });
+  } else {
+    map.easeTo({ pitch: 0, bearing: 0, duration: 800 });
+  }
 }
 
-// ─── Map ───
-const map = L.map('map').setView([35.715, 139.783], 14);
-L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-  attribution: '&copy; OSM &copy; CARTO', maxZoom: 19, subdomains: 'abcd',
-}).addTo(map);
+// ─── Draw bbox / Near search ───
+let drawingBox = false, drawStart = null;
+let nearMode = false;
+let hasSearchOverlay = false;
 
-// ─── Draw bbox search ───
-let drawingBox = false, drawStart = null, drawRect = null, searchRect = null;
-let nearMode = false, nearCircle = null, nearMarker = null;
+// Add tool buttons after map loads
+map.on('load', () => {
+  const toolDiv = document.createElement('div');
+  toolDiv.style.cssText = 'position:absolute;top:10px;right:10px;z-index:2;display:flex;flex-direction:column;gap:4px';
+  toolDiv.innerHTML = `
+    <button id="draw-bbox-btn" class="map-tool-btn" style="color:#3b82f6">&#x25A1; Bbox</button>
+    <button id="near-search-btn" class="map-tool-btn" style="color:#8b5cf6">&#x25CE; Near</button>
+    <button id="clear-search-btn" class="map-tool-btn" style="color:#ef4444;display:none">&#x2715; Clear</button>`;
+  document.getElementById('map').appendChild(toolDiv);
 
-const drawBtn = L.control({ position: 'topright' });
-drawBtn.onAdd = () => { const d = L.DomUtil.create('div',''); d.innerHTML = `<button id="draw-bbox-btn" style="background:#fff;border:2px solid rgba(0,0,0,0.2);border-radius:4px;padding:6px 10px;cursor:pointer;font-size:13px;font-weight:600;color:#3b82f6">&#x25A1; Bbox</button><button id="near-search-btn" style="background:#fff;border:2px solid rgba(0,0,0,0.2);border-radius:4px;padding:6px 10px;cursor:pointer;font-size:13px;font-weight:600;color:#8b5cf6;margin-top:4px">&#x25CE; Near</button><button id="clear-bbox-btn" style="display:none;background:#fff;border:2px solid rgba(0,0,0,0.2);border-radius:4px;padding:6px 10px;cursor:pointer;font-size:13px;color:#ef4444;margin-top:4px">&#x2715; Clear</button>`; L.DomEvent.disableClickPropagation(d); return d; };
-drawBtn.addTo(map);
-
-setTimeout(() => {
-  document.getElementById('draw-bbox-btn').onclick = () => { drawingBox = true; nearMode = false; map.dragging.disable(); map.getContainer().style.cursor = 'crosshair'; };
-  document.getElementById('near-search-btn').onclick = () => { nearMode = true; drawingBox = false; map.getContainer().style.cursor = 'crosshair'; };
-  document.getElementById('clear-bbox-btn').onclick = () => {
-    if (searchRect) { map.removeLayer(searchRect); searchRect = null; }
-    if (nearCircle) { map.removeLayer(nearCircle); nearCircle = null; }
-    if (nearMarker) { map.removeLayer(nearMarker); nearMarker = null; }
-    document.getElementById('clear-bbox-btn').style.display = 'none';
+  document.getElementById('draw-bbox-btn').onclick = () => {
+    drawingBox = true; nearMode = false;
+    map.getCanvas().style.cursor = 'crosshair';
+    map.dragPan.disable();
+  };
+  document.getElementById('near-search-btn').onclick = () => {
+    nearMode = true; drawingBox = false;
+    map.getCanvas().style.cursor = 'crosshair';
+  };
+  document.getElementById('clear-search-btn').onclick = () => {
+    map.getSource('search-overlay')?.setData({ type: 'FeatureCollection', features: [] });
+    hasSearchOverlay = false;
+    document.getElementById('clear-search-btn').style.display = 'none';
     loadMapData();
   };
-}, 100);
+});
 
-map.on('mousedown', e => { if (drawingBox) drawStart = e.latlng; });
-map.on('mousemove', e => { if (drawingBox && drawStart) { if (drawRect) map.removeLayer(drawRect); drawRect = L.rectangle([drawStart, e.latlng], { color: '#3b82f6', weight: 2, fillOpacity: 0.1, dashArray: '5,5' }).addTo(map); } });
-map.on('mouseup', e => {
+// Bbox draw handlers
+map.on('mousedown', (e) => { if (drawingBox) { drawStart = e.lngLat; } });
+map.on('mousemove', (e) => {
   if (drawingBox && drawStart) {
-    drawingBox = false; map.dragging.enable(); map.getContainer().style.cursor = '';
-    if (drawRect) map.removeLayer(drawRect);
-    const bounds = L.latLngBounds(drawStart, e.latlng);
-    if (searchRect) map.removeLayer(searchRect);
-    searchRect = L.rectangle(bounds, { color: '#3b82f6', weight: 2, fillOpacity: 0.08 }).addTo(map);
-    document.getElementById('clear-bbox-btn').style.display = 'block';
-    drawStart = null;
-    const bbox = `${bounds.getWest().toFixed(5)},${bounds.getSouth().toFixed(5)},${bounds.getEast().toFixed(5)},${bounds.getNorth().toFixed(5)}`;
-    loadMapDataCustom(`bbox=${bbox}`);
+    const bbox = [
+      [Math.min(drawStart.lng, e.lngLat.lng), Math.min(drawStart.lat, e.lngLat.lat)],
+      [Math.max(drawStart.lng, e.lngLat.lng), Math.max(drawStart.lat, e.lngLat.lat)],
+    ];
+    map.getSource('search-overlay')?.setData({
+      type: 'FeatureCollection',
+      features: [{ type: 'Feature', geometry: { type: 'Polygon', coordinates: [[
+        [bbox[0][0],bbox[0][1]], [bbox[1][0],bbox[0][1]], [bbox[1][0],bbox[1][1]], [bbox[0][0],bbox[1][1]], [bbox[0][0],bbox[0][1]]
+      ]] } }]
+    });
   }
 });
-map.on('click', e => {
+map.on('mouseup', (e) => {
+  if (drawingBox && drawStart) {
+    drawingBox = false;
+    map.dragPan.enable();
+    map.getCanvas().style.cursor = '';
+    const w = Math.min(drawStart.lng, e.lngLat.lng), s = Math.min(drawStart.lat, e.lngLat.lat);
+    const ea = Math.max(drawStart.lng, e.lngLat.lng), n = Math.max(drawStart.lat, e.lngLat.lat);
+    drawStart = null;
+    hasSearchOverlay = true;
+    document.getElementById('clear-search-btn').style.display = 'block';
+    loadMapDataCustom(`bbox=${w.toFixed(5)},${s.toFixed(5)},${ea.toFixed(5)},${n.toFixed(5)}`);
+  }
+});
+map.on('click', (e) => {
   if (nearMode) {
-    nearMode = false; map.getContainer().style.cursor = '';
-    if (nearCircle) map.removeLayer(nearCircle);
-    if (nearMarker) map.removeLayer(nearMarker);
+    nearMode = false;
+    map.getCanvas().style.cursor = '';
     const radius = 300;
-    nearMarker = L.circleMarker(e.latlng, { radius: 5, color: '#8b5cf6', fillColor: '#8b5cf6', fillOpacity: 1 }).addTo(map);
-    nearCircle = L.circle(e.latlng, { radius, color: '#8b5cf6', weight: 2, fillOpacity: 0.08, dashArray: '5,5' }).addTo(map);
-    document.getElementById('clear-bbox-btn').style.display = 'block';
-    loadMapDataCustom(`near=${e.latlng.lng.toFixed(5)},${e.latlng.lat.toFixed(5)}&radius=${radius}`);
+    const lng = e.lngLat.lng, lat = e.lngLat.lat;
+    // Approximate circle as polygon
+    const pts = [];
+    for (let i = 0; i <= 64; i++) {
+      const a = (i / 64) * Math.PI * 2;
+      const dx = radius * Math.cos(a) / (111320 * Math.cos(lat * Math.PI / 180));
+      const dy = radius * Math.sin(a) / 110540;
+      pts.push([lng + dx, lat + dy]);
+    }
+    map.getSource('search-overlay')?.setData({
+      type: 'FeatureCollection',
+      features: [{ type: 'Feature', geometry: { type: 'Polygon', coordinates: [pts] } }]
+    });
+    hasSearchOverlay = true;
+    document.getElementById('clear-search-btn').style.display = 'block';
+    loadMapDataCustom(`near=${lng.toFixed(5)},${lat.toFixed(5)}&radius=${radius}`);
   }
 });
 
@@ -284,8 +402,6 @@ async function init() {
 
   select.innerHTML = datasets.map(d => `<option value="${d.id}">${d.name} (${d.snapshot.entityCount} features)</option>`).join('');
   select.onchange = () => loadDataset(select.value);
-
-  // Auto-select first
   loadDataset(datasets[0].id);
 }
 
@@ -295,36 +411,29 @@ async function loadDataset(datasetId) {
   selectedId = null;
   activeFilter = '';
 
-  // Reset UI
   document.getElementById('filters').innerHTML = '';
   document.getElementById('list').innerHTML = '<div class="loading">Loading...</div>';
   document.getElementById('schema-panel').style.display = 'none';
   document.getElementById('stats-panel').style.display = 'none';
-  if (geoJsonLayer) { map.removeLayer(geoJsonLayer); geoJsonLayer = null; }
 
-  // Load schema
   schemaData = await apiGet(`/delivery/datasets/${DATASET_ID}/schema`);
   const models = schemaData?.models || [];
-  // Merge all model fields for multi-model datasets
   const allFields = models.flatMap(m => m.fields || []);
-  // Deduplicate by key (first occurrence wins)
   const fieldMap = {};
   allFields.forEach(f => { if (!fieldMap[f.key]) fieldMap[f.key] = f; });
   const mergedFields = Object.values(fieldMap);
 
   modelName = models.map(m => m.name).join(' + ') || 'Data';
-  geometryType = models[0]?.geometryType || 'MIXED';
   document.title = `${schemaData?.dataset || modelName} — Viewer`;
   document.getElementById('search').placeholder = `Search ${modelName}...`;
 
-  // Derive field roles: prefer 'name' field, fallback to first string
   titleField = mergedFields.find(f => f.key === 'name' && f.fieldType === 'string')
     || mergedFields.find(f => f.fieldType === 'string') || null;
   subtitleFields = mergedFields.filter(f => f !== titleField && ['number', 'string', 'enum_'].includes(f.fieldType)).slice(0, 3);
   enumField = mergedFields.find(f => f.fieldType === 'enum_' && f.enumValues?.length) || null;
   numberField = mergedFields.find(f => f.fieldType === 'number') || null;
 
-  // Render schema panel — show ALL models
+  // Schema panel
   document.getElementById('schema-panel').style.display = 'block';
   document.getElementById('schema-body').innerHTML = models.map(m =>
     `<div style="font-size:12px;font-weight:600;color:#e2e8f0;margin:8px 0 4px">${m.name} <span style="font-weight:400;color:#64748b">${m.geometryType}</span></div>` +
@@ -338,7 +447,7 @@ async function loadDataset(datasetId) {
     document.getElementById('schema-toggle').textContent = schemaVisible ? 'hide' : 'show';
   };
 
-  // Build filter chips from enum field
+  // Filter chips
   if (enumField) {
     const el = document.getElementById('filters');
     el.innerHTML = `<span class="filter-chip active" data-val="">All</span>` +
@@ -353,15 +462,9 @@ async function loadDataset(datasetId) {
     });
   }
 
-  // Search
   document.getElementById('search').oninput = () => { clearTimeout(loadTimer); loadTimer = setTimeout(() => loadMapData(), 300); };
 
-  // No auto-refresh on map move — use Load button or search tools
-
-  // Initial load
   loadMapData();
-
-  // Stats in background
   loadStats();
 }
 
@@ -378,16 +481,14 @@ async function loadMapDataCustom(spatialParam) {
   let filterParam = '';
   if (activeFilter && enumField) filterParam = `&filter[${enumField.key}]=${encodeURIComponent(activeFilter)}`;
 
-  const isActiveSearch = !!(searchRect || nearCircle);
+  const isActiveSearch = hasSearchOverlay;
 
   try {
-    // Load spatial data for map (with bbox/near, geojson format)
     const mapPath = `/delivery/datasets/${DATASET_ID}/entities?${spatialParam}&pageSize=500&format=geojson${filterParam}`;
     const fc = await apiGet(mapPath);
     lastGeoJsonData = fc;
     let mapFeatures = fc.features || [];
 
-    // Only load non-spatial list in browse mode (not during active bbox/near search)
     let listEntities = [];
     if (!isActiveSearch) {
       const listPath = `/delivery/datasets/${DATASET_ID}/entities?pageSize=200${filterParam}`;
@@ -395,39 +496,38 @@ async function loadMapDataCustom(spatialParam) {
       listEntities = listResult.entities || [];
     }
 
-    // Client-side name search
     if (search && titleField) {
       const q = search.toLowerCase();
       mapFeatures = mapFeatures.filter(f => (f.properties?.[titleField.key] || '').toLowerCase().includes(q));
       listEntities = listEntities.filter(e => (e.properties?.[titleField.key] || '').toLowerCase().includes(q));
     }
 
-    // Render map (only features with geometry)
-    if (geoJsonLayer) map.removeLayer(geoJsonLayer);
-    geoJsonLayer = L.geoJSON({ type: 'FeatureCollection', features: mapFeatures }, {
-      pointToLayer: (feature, latlng) => L.circleMarker(latlng, {
-        radius: feature.id === selectedId ? 8 : 5,
-        color: feature.id === selectedId ? '#ef4444' : '#3b82f6',
-        fillColor: feature.id === selectedId ? '#fecaca' : '#60a5fa',
-        fillOpacity: feature.id === selectedId ? 0.8 : 0.6,
-        weight: feature.id === selectedId ? 3 : 1,
+    // Enrich with _height and _id for MapLibre
+    const enriched = {
+      type: 'FeatureCollection',
+      features: mapFeatures.map(f => {
+        const props = { ...(f.properties || {}), _id: f.id };
+        if (!props._height) {
+          if (props.height) props._height = parseFloat(props.height) || 0;
+          else {
+            const maxZ = extractMaxZ(f.geometry?.coordinates);
+            if (maxZ > 0) props._height = maxZ;
+          }
+        }
+        return { ...f, properties: props };
       }),
-      style: (feature) => ({
-        color: feature.id === selectedId ? '#ef4444' : '#3b82f6',
-        weight: feature.id === selectedId ? 3 : 1,
-        fillColor: feature.id === selectedId ? '#fecaca' : '#60a5fa',
-        fillOpacity: feature.id === selectedId ? 0.6 : 0.25,
-      }),
-      onEachFeature: (feature, layer) => { layer.on('click', () => selectFeature(feature)); },
-    }).addTo(map);
+    };
 
-    // Merge: map features + all list entities (deduplicated)
+    if (mapReady) {
+      map.getSource('entities')?.setData(enriched);
+    }
+
+    // Merge list
     const mapIds = new Set(mapFeatures.map(f => f.id));
     const allListItems = [
-      ...mapFeatures.map(f => ({ id: f.id, properties: f.properties || {}, geometry: f.geometry, version: f.properties?._version })),
+      ...mapFeatures.map(f => ({ id: f.id, properties: f.properties || {}, geometry: f.geometry })),
       ...listEntities.filter(e => !mapIds.has(e.id)).map(e => ({ ...e, _noGeo: !e.geometry })),
     ];
-
     renderList(allListItems);
 
     const geoCount = mapFeatures.length;
@@ -438,12 +538,17 @@ async function loadMapDataCustom(spatialParam) {
     } else {
       document.getElementById('count-badge').textContent = `${totalList} records (no geometry)`;
     }
-
-    // Update 3D view if active
-    if (currentView === '3d') update3dData();
   } catch (err) {
     document.getElementById('list').innerHTML = `<div class="loading" style="color:#f87171">${err.message}</div>`;
   }
+}
+
+function extractMaxZ(coords) {
+  if (!coords) return 0;
+  if (typeof coords[0] === 'number') return coords[2] || 0;
+  let max = 0;
+  for (const c of coords) { const z = extractMaxZ(c); if (z > max) max = z; }
+  return max;
 }
 
 function renderList(features) {
@@ -474,11 +579,10 @@ function renderList(features) {
   });
 }
 
-function selectFeature(feature) {
+function selectFeature(feature, lngLat) {
   selectedId = feature.id;
   const props = feature.properties || {};
 
-  // Schema-driven popup: find matching model by _type, fallback to all fields
   let rows = '';
   const entityType = props._type;
   const matchModel = schemaData?.models?.find(m => m.key === entityType);
@@ -501,21 +605,26 @@ function selectFeature(feature) {
   if (entityType) rows += `<div class="dp-row"><span class="dp-label">Type</span><span class="dp-value"><span class="li-type">${entityType}</span></span></div>`;
 
   const title = titleField ? (props[titleField.key] || 'Untitled') : (props.name || 'Feature');
-  const popup = L.popup({ maxWidth: 300 }).setContent(`<div class="detail-popup"><h3>${title}</h3>${rows}<div style="margin-top:6px;font-size:10px;color:#94a3b8">v${props._version || '?'} · ${feature.id?.substring(0,8)}...</div></div>`);
+  const popupHtml = `<div class="detail-popup"><h3>${title}</h3>${rows}<div style="margin-top:6px;font-size:10px;color:#94a3b8">v${props._version || '?'} · ${(feature.id || '').substring(0,8)}...</div></div>`;
 
-  if (feature.geometry?.coordinates) {
-    let center;
+  // Determine popup position
+  if (!lngLat && feature.geometry?.coordinates) {
     if (feature.geometry.type === 'Point') {
-      center = [feature.geometry.coordinates[1], feature.geometry.coordinates[0]];
+      lngLat = { lng: feature.geometry.coordinates[0], lat: feature.geometry.coordinates[1] };
     } else if (feature.geometry.coordinates[0]) {
       const coords = feature.geometry.coordinates[0];
-      const lats = coords.map(c => c[1]), lons = coords.map(c => c[0]);
-      center = [(Math.min(...lats)+Math.max(...lats))/2, (Math.min(...lons)+Math.max(...lons))/2];
+      const lons = coords.map(c => c[0]), lats = coords.map(c => c[1]);
+      lngLat = { lng: (Math.min(...lons)+Math.max(...lons))/2, lat: (Math.min(...lats)+Math.max(...lats))/2 };
     }
-    if (center) popup.setLatLng(center).openOn(map);
   }
 
-  // Highlight selected in list (no API call)
+  if (lngLat) {
+    new maplibregl.Popup({ maxWidth: '300px' })
+      .setLngLat([lngLat.lng, lngLat.lat])
+      .setHTML(popupHtml)
+      .addTo(map);
+  }
+
   document.querySelectorAll('.list-item').forEach(el => {
     el.classList.toggle('active', el.dataset.id === selectedId);
   });
@@ -536,18 +645,14 @@ async function loadStats() {
 
   let html = `<div class="stat-row"><span class="stat-label">Total</span><span class="stat-value">${all.length}</span></div>`;
 
-  // Number field stats
   if (numberField) {
     const vals = all.map(e => e.properties[numberField.key]).filter(v => typeof v === 'number');
     if (vals.length) {
-      const avg = (vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(1);
-      html += `<div class="stat-row"><span class="stat-label">With ${numberField.label}</span><span class="stat-value">${vals.length}</span></div>`;
-      html += `<div class="stat-row"><span class="stat-label">Avg ${numberField.label}</span><span class="stat-value">${avg}</span></div>`;
+      html += `<div class="stat-row"><span class="stat-label">Avg ${numberField.label}</span><span class="stat-value">${(vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(1)}</span></div>`;
       html += `<div class="stat-row"><span class="stat-label">Max ${numberField.label}</span><span class="stat-value">${Math.max(...vals)}</span></div>`;
     }
   }
 
-  // Enum field distribution
   if (enumField) {
     const counts = {};
     all.forEach(e => { const v = e.properties[enumField.key] || '?'; counts[v] = (counts[v]||0)+1; });
@@ -559,146 +664,6 @@ async function loadStats() {
   }
 
   statsEl.innerHTML = html;
-}
-
-// ─── 3D View (MapLibre GL) ───
-let map3d = null;
-let currentView = '2d';
-let lastGeoJsonData = null; // shared data between 2D and 3D
-
-function switchView(mode) {
-  currentView = mode;
-  document.getElementById('btn-2d').classList.toggle('active', mode === '2d');
-  document.getElementById('btn-3d').classList.toggle('active', mode === '3d');
-  document.getElementById('map').style.display = mode === '2d' ? '' : 'none';
-  document.getElementById('map3d').style.display = mode === '3d' ? '' : 'none';
-
-  if (mode === '3d') {
-    // MapLibre needs the container visible before init
-    setTimeout(() => {
-      if (!map3d) initMap3d();
-      else { map3d.resize(); update3dData(); }
-    }, 100);
-  }
-}
-
-function initMap3d() {
-  const center = map.getCenter();
-  map3d = new maplibregl.Map({
-    container: 'map3d',
-    style: {
-      version: 8,
-      sources: {
-        'carto': {
-          type: 'raster',
-          tiles: ['https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'],
-          tileSize: 256,
-          attribution: '&copy; OSM &copy; CARTO',
-        }
-      },
-      layers: [{ id: 'carto', type: 'raster', source: 'carto' }],
-    },
-    center: [center.lng, center.lat],
-    zoom: map.getZoom(),
-    pitch: 60,
-    bearing: -20,
-    antialias: true,
-  });
-
-  map3d.on('load', () => {
-    // Add empty GeoJSON source
-    map3d.addSource('entities', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-
-    // Flat polygons (for features without height)
-    map3d.addLayer({
-      id: 'entities-flat',
-      type: 'fill',
-      source: 'entities',
-      filter: ['!', ['has', '_height']],
-      paint: { 'fill-color': '#60a5fa', 'fill-opacity': 0.4, 'fill-outline-color': '#3b82f6' },
-    });
-
-    // 3D extruded polygons
-    map3d.addLayer({
-      id: 'entities-3d',
-      type: 'fill-extrusion',
-      source: 'entities',
-      filter: ['has', '_height'],
-      paint: {
-        'fill-extrusion-color': [
-          'interpolate', ['linear'], ['get', '_height'],
-          0, '#60a5fa',
-          20, '#818cf8',
-          50, '#a78bfa',
-          100, '#c084fc',
-        ],
-        'fill-extrusion-height': ['get', '_height'],
-        'fill-extrusion-base': 0,
-        'fill-extrusion-opacity': 0.8,
-      },
-    });
-
-    // Points
-    map3d.addLayer({
-      id: 'entities-points',
-      type: 'circle',
-      source: 'entities',
-      filter: ['==', ['geometry-type'], 'Point'],
-      paint: { 'circle-radius': 5, 'circle-color': '#60a5fa', 'circle-stroke-width': 1, 'circle-stroke-color': '#3b82f6' },
-    });
-
-    update3dData();
-
-    // Click handler
-    map3d.on('click', 'entities-3d', (e) => {
-      if (e.features?.length) {
-        const f = e.features[0];
-        const props = f.properties || {};
-        const name = props[titleField?.key] || props.name || 'Feature';
-        new maplibregl.Popup()
-          .setLngLat(e.lngLat)
-          .setHTML(`<div style="font-size:13px"><strong>${name}</strong><br><span style="color:#666">Height: ${props._height || '?'}m</span></div>`)
-          .addTo(map3d);
-      }
-    });
-    map3d.on('mouseenter', 'entities-3d', () => { map3d.getCanvas().style.cursor = 'pointer'; });
-    map3d.on('mouseleave', 'entities-3d', () => { map3d.getCanvas().style.cursor = ''; });
-  });
-}
-
-function update3dData() {
-  if (!map3d || !lastGeoJsonData) return;
-  const source = map3d.getSource('entities');
-  if (!source) return;
-
-  // Enrich features with _height for extrusion
-  const enriched = {
-    type: 'FeatureCollection',
-    features: (lastGeoJsonData.features || []).map(f => {
-      const props = { ...(f.properties || {}) };
-      // Height from: property "height", or Z coordinate max, or null
-      if (!props._height) {
-        if (props.height) {
-          props._height = parseFloat(props.height) || 0;
-        } else if (f.geometry?.coordinates) {
-          const maxZ = extractMaxZ(f.geometry.coordinates);
-          if (maxZ > 0) props._height = maxZ;
-        }
-      }
-      return { ...f, properties: props };
-    }),
-  };
-  source.setData(enriched);
-}
-
-function extractMaxZ(coords) {
-  if (typeof coords[0] === 'number') return coords[2] || 0;
-  let max = 0;
-  for (const c of coords) {
-    const z = extractMaxZ(c);
-    if (z > max) max = z;
-  }
-  return max;
 }
 
 init().catch(err => {
