@@ -91,6 +91,7 @@
   <div class="topbar">
     <h1>Viewer</h1>
     <select id="dataset-select"><option value="">Loading datasets...</option></select>
+    <button id="load-btn" style="padding:5px 12px;border:1px solid #334155;border-radius:6px;font-size:12px;background:#3b82f6;color:#fff;cursor:pointer;font-weight:600" onclick="loadMapData()">Load</button>
     <div class="right">
       <span class="badge badge-count" id="count-badge"></span>
       <span class="badge badge-api">Delivery API</span>
@@ -338,9 +339,7 @@ async function loadDataset(datasetId) {
   // Search
   document.getElementById('search').oninput = () => { clearTimeout(loadTimer); loadTimer = setTimeout(() => loadMapData(), 300); };
 
-  // Map events
-  map.off('moveend');
-  map.on('moveend', () => { if (!searchRect && !nearCircle) loadMapData(); });
+  // No auto-refresh on map move — use Load button or search tools
 
   // Initial load
   loadMapData();
