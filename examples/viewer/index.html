@@ -97,6 +97,13 @@
   <div class="topbar">
     <h1>Viewer</h1>
     <select id="dataset-select"><option value="">Loading datasets...</option></select>
+    <select id="page-size" style="padding:5px 4px;border:1px solid #334155;border-radius:6px;font-size:12px;background:#1e293b;color:#e2e8f0;outline:none;width:70px">
+      <option value="100">100</option>
+      <option value="200" selected>200</option>
+      <option value="500">500</option>
+      <option value="1000">1000</option>
+      <option value="all">All</option>
+    </select>
     <button id="load-btn" style="padding:5px 12px;border:1px solid #334155;border-radius:6px;font-size:12px;background:#3b82f6;color:#fff;cursor:pointer;font-weight:600" onclick="loadMapData()">Load</button>
     <div class="view-toggle">
       <button id="btn-2d" class="active" onclick="switchView('2d')">2D</button>
@@ -481,25 +488,18 @@ async function loadMapDataCustom(spatialParam) {
   let filterParam = '';
   if (activeFilter && enumField) filterParam = `&filter[${enumField.key}]=${encodeURIComponent(activeFilter)}`;
 
-  const isActiveSearch = hasSearchOverlay;
+  const pageSizeVal = document.getElementById('page-size').value;
+  const pageSizeParam = pageSizeVal === 'all' ? 'pageSize=10000' : `pageSize=${pageSizeVal}`;
 
   try {
-    const mapPath = `/delivery/datasets/${DATASET_ID}/entities?${spatialParam}&pageSize=500&format=geojson${filterParam}`;
+    const mapPath = `/delivery/datasets/${DATASET_ID}/entities?${spatialParam}&${pageSizeParam}&format=geojson${filterParam}`;
     const fc = await apiGet(mapPath);
     lastGeoJsonData = fc;
     let mapFeatures = fc.features || [];
 
-    let listEntities = [];
-    if (!isActiveSearch) {
-      const listPath = `/delivery/datasets/${DATASET_ID}/entities?pageSize=200${filterParam}`;
-      const listResult = await apiGet(listPath);
-      listEntities = listResult.entities || [];
-    }
-
     if (search && titleField) {
       const q = search.toLowerCase();
       mapFeatures = mapFeatures.filter(f => (f.properties?.[titleField.key] || '').toLowerCase().includes(q));
-      listEntities = listEntities.filter(e => (e.properties?.[titleField.key] || '').toLowerCase().includes(q));
     }
 
     // Enrich with _height and _id for MapLibre
@@ -522,22 +522,11 @@ async function loadMapDataCustom(spatialParam) {
       map.getSource('entities')?.setData(enriched);
     }
 
-    // Merge list
-    const mapIds = new Set(mapFeatures.map(f => f.id));
-    const allListItems = [
-      ...mapFeatures.map(f => ({ id: f.id, properties: f.properties || {}, geometry: f.geometry })),
-      ...listEntities.filter(e => !mapIds.has(e.id)).map(e => ({ ...e, _noGeo: !e.geometry })),
-    ];
+    const allListItems = mapFeatures.map(f => ({ id: f.id, properties: f.properties || {}, geometry: f.geometry }));
     renderList(allListItems);
 
-    const geoCount = mapFeatures.length;
-    const totalList = allListItems.length;
-    const noGeoCount = totalList - geoCount;
-    if (geoCount > 0) {
-      document.getElementById('count-badge').textContent = `${geoCount} on map` + (noGeoCount ? ` + ${noGeoCount} list only` : '');
-    } else {
-      document.getElementById('count-badge').textContent = `${totalList} records (no geometry)`;
-    }
+    const total = fc.metadata?.total ?? mapFeatures.length;
+    document.getElementById('count-badge').textContent = `${mapFeatures.length} loaded` + (total > mapFeatures.length ? ` / ${total} total` : '');
   } catch (err) {
     document.getElementById('list').innerHTML = `<div class="loading" style="color:#f87171">${err.message}</div>`;
   }
