@@ -155,7 +155,7 @@ export async function generateSnapshot(datasetDefinitionId: string) {
     data: {
       datasetDefinitionId,
       version: nextVersion,
-      manifest,
+      manifest: manifest as any,
       status: "ready",
     },
   });

@@ -251,8 +251,8 @@ export async function updateBinding(id: string, data: { filterJson?: object | nu
   return prisma.datasetModelBinding.update({
     where: { id },
     data: {
-      filterJson: data.filterJson === null ? null : data.filterJson,
-      projectionJson: data.projectionJson === null ? null : data.projectionJson,
+      filterJson: (data.filterJson === null ? null : data.filterJson) as any,
+      projectionJson: (data.projectionJson === null ? null : data.projectionJson) as any,
     },
     include: { modelDefinition: true },
   });

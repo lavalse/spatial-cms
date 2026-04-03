@@ -117,7 +117,7 @@ export async function bulkImport(
       data: {
         type: item.type,
         modelDefinitionId: modelDefId,
-        properties: item.properties,
+        properties: item.properties as any,
         status: "active",
       },
     });
@@ -131,26 +131,26 @@ export async function bulkImport(
       data: {
         entityId: entity.id,
         versionNumber: 1,
-        snapshot: {
+        snapshot: ({
           type: item.type,
           modelDefinitionId: modelDefId ?? null,
           properties: item.properties,
           geometry: item.geometry ?? null,
-        },
+        }) as any,
       },
     });
 
     await prisma.proposal.create({
       data: {
         entityId: entity.id,
-        proposedChange: {
+        proposedChange: ({
           action: "create",
           data: {
             type: item.type,
             properties: item.properties,
             geometry: item.geometry ?? null,
           },
-        },
+        }) as any,
         source,
         status: "approved",
       },

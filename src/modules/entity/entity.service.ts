@@ -138,7 +138,7 @@ export async function createEntityInternal(data: {
     data: {
       type,
       modelDefinitionId: modelDefId,
-      properties: data.properties ?? {},
+      properties: (data.properties ?? {}) as any,
       status: data.status ?? "active",
     },
   });
@@ -154,12 +154,12 @@ export async function createEntityInternal(data: {
     data: {
       entityId: entity.id,
       versionNumber: 1,
-      snapshot: {
+      snapshot: ({
         type,
         modelDefinitionId: modelDefId ?? null,
         properties: data.properties ?? {},
         geometry: data.geometry ?? null,
-      },
+      }) as any,
     },
   });
 
@@ -209,11 +209,11 @@ export async function updateEntityInternal(
       data: {
         entityId: id,
         versionNumber: nextVersion,
-        snapshot: {
+        snapshot: ({
           type: changes.type ?? entity.type,
           properties: mergedProps,
           geometry: changes.geometry ?? null,
-        },
+        }) as any,
       },
     });
   });

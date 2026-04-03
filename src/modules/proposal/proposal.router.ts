@@ -11,7 +11,7 @@ export const proposalRouter = Router();
 proposalRouter.post("/", async (req, res, next) => {
   try {
     const data = createProposalSchema.parse(req.body);
-    const proposal = await proposalService.createProposal(data);
+    const proposal = await proposalService.createProposal(data as any);
     res.status(201).json(proposal);
   } catch (err) {
     next(err);

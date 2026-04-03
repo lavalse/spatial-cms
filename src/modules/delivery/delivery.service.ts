@@ -68,7 +68,7 @@ export async function getPublishedDataset(datasetDefinitionId: string) {
 
   if (!release) return null;
 
-  const manifest = release.activeSnapshot.manifest as ManifestItem[];
+  const manifest = release.activeSnapshot.manifest as unknown as ManifestItem[];
 
   const d = release.datasetDefinition;
   return {
@@ -117,7 +117,7 @@ export async function getPublishedEntities(
   } = options;
   const clampedPageSize = Math.min(Math.max(pageSize, 1), 100000);
 
-  let manifest = release.activeSnapshot.manifest as ManifestItem[];
+  let manifest = release.activeSnapshot.manifest as unknown as ManifestItem[];
 
   // Filter by model type if specified
   if (modelKey) {
@@ -265,7 +265,7 @@ export async function getPublishedEntity(
 
   if (!release) return null;
 
-  const manifest = release.activeSnapshot.manifest as ManifestItem[];
+  const manifest = release.activeSnapshot.manifest as unknown as ManifestItem[];
   const item = manifest.find((m) => m.entityId === entityId);
   if (!item) return null;
 

@@ -73,7 +73,7 @@ ingestionRouter.post("/validate", async (req, res, next) => {
     const data = validateSchema.parse(req.body);
     const result = await ingestionService.validateBulk(
       data.modelKey,
-      data.entities,
+      data.entities as any,
     );
     res.json(result);
   } catch (err) {
@@ -86,7 +86,7 @@ ingestionRouter.post("/governed", async (req, res, next) => {
   try {
     const data = importSchema.parse(req.body);
     const result = await ingestionService.governedImport(
-      data.entities,
+      data.entities as any,
       data.source,
       data.options,
     );
@@ -101,7 +101,7 @@ ingestionRouter.post("/import", async (req, res, next) => {
   try {
     const data = importSchema.parse(req.body);
     const result = await ingestionService.bulkImport(
-      data.entities,
+      data.entities as any,
       data.source,
       data.options,
     );
@@ -116,7 +116,7 @@ ingestionRouter.post("/proposal-set", async (req, res, next) => {
   try {
     const data = proposalSetSchema.parse(req.body);
     const result = await ingestionService.createProposalSet(
-      data.proposals,
+      data.proposals as any,
       data.source,
     );
     res.status(201).json(result);
