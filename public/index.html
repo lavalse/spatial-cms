@@ -240,21 +240,21 @@ async function initKeycloak() {
   } catch {}
 
   if (!kcUrl) {
-    // Keycloak not configured — fall back to no auth or show message
+    // Keycloak not configured — run without auth (dev mode)
     overlay.style.display = 'none';
     console.log('Keycloak not configured, running without auth');
+    startApp();
     return;
   }
 
-  // Load Keycloak JS adapter dynamically
+  // Load Keycloak JS adapter from CDN (Keycloak 26+ no longer bundles it)
   try {
     const script = document.createElement('script');
-    script.src = `${kcUrl}/js/keycloak.js`;
+    script.src = 'https://unpkg.com/keycloak-js@26.0/lib/keycloak.js';
     await new Promise((resolve, reject) => { script.onload = resolve; script.onerror = reject; document.head.appendChild(script); });
   } catch {
-    document.getElementById('auth-error').textContent = 'Cannot load Keycloak. Check if Keycloak is running.';
+    document.getElementById('auth-error').textContent = 'Cannot load Keycloak JS adapter.';
     document.getElementById('auth-error').style.display = '';
-    document.getElementById('auth-hint').textContent = `Expected at: ${kcUrl}`;
     return;
   }
 
@@ -276,6 +276,9 @@ async function initKeycloak() {
       setInterval(async () => {
         try { await kc.updateToken(30); keycloakToken = kc.token; } catch { kc.login(); }
       }, 30000);
+
+      // Start the app now that we have a token
+      startApp();
 
       // Show user info in topbar
       const userInfo = kc.tokenParsed;
@@ -3715,12 +3718,13 @@ async function viewGovernance(main) {
   main.append(t);
 }
 
-// ─── Init ──────────────────────────────────────────
-(async () => {
+// ─── Init (called after auth completes) ────────────
+async function startApp() {
   await refreshModels();
   await refreshPendingCount();
   router();
-})();
+}
+// startApp() is called from initKeycloak() after successful authentication
 </script>
 </body>
 </html>
