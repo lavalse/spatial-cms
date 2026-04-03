@@ -11,6 +11,26 @@ services:
       - pgdata:/var/lib/postgresql/data
       - ./docker/init-test-db.sh:/docker-entrypoint-initdb.d/init-test-db.sh
 
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: start-dev --import-realm
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://db:5432/spatial_cms
+      KC_DB_USERNAME: spatial_cms
+      KC_DB_PASSWORD: spatial_cms
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+      KC_HTTP_PORT: "8180"
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+    ports:
+      - "8180:8180"
+    depends_on:
+      - db
+    volumes:
+      - ./docker/keycloak-realm.json:/opt/keycloak/data/import/realm.json
+
   directus:
     image: directus/directus:11
     ports:

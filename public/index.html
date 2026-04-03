@@ -203,6 +203,7 @@
       <span class="workflow-arrow">&rarr;</span>
       <span class="workflow-step wf-publish" onclick="nav('publish/datasets')">Publish</span>
     </div>
+    <div id="user-info" style="display:none;align-items:center;gap:8px;margin-left:auto"></div>
   </div>
   <div class="main" id="main"></div>
 </div>
@@ -210,54 +211,104 @@
 <div id="auth-overlay" style="position:fixed;inset:0;background:var(--bg);z-index:9999;display:flex;align-items:center;justify-content:center">
   <div style="background:var(--surface);padding:32px;border-radius:12px;box-shadow:var(--shadow);max-width:400px;width:100%;text-align:center">
     <h2 style="margin-bottom:4px">Spatial CMS</h2>
-    <p style="color:var(--muted);font-size:13px;margin-bottom:24px">Enter your API Key to continue</p>
-    <input id="auth-key-input" type="password" placeholder="scms_..." style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px;margin-bottom:12px;outline:none">
-    <div id="auth-error" style="color:var(--danger);font-size:12px;margin-bottom:12px;display:none"></div>
-    <button id="auth-submit" class="btn btn-primary" style="width:100%;padding:10px">Sign In</button>
-    <p style="color:var(--muted);font-size:11px;margin-top:16px">Get a key from your administrator</p>
+    <p style="color:var(--muted);font-size:13px;margin-bottom:16px">Connecting to authentication server...</p>
+    <div id="auth-error" style="color:var(--danger);font-size:12px;display:none;margin-bottom:12px"></div>
+    <button id="auth-login-btn" class="btn btn-primary" style="width:100%;padding:10px;display:none">Sign In with Keycloak</button>
+    <p style="color:var(--muted);font-size:11px;margin-top:16px" id="auth-hint"></p>
   </div>
 </div>
 
 <script>
 const API = '/api/v1';
 
-// ─── Auth ─────────────────────────────────────────
-function getApiKey() { return sessionStorage.getItem('spatial_cms_key') || ''; }
-function setApiKey(key) { sessionStorage.setItem('spatial_cms_key', key); }
+// ─── Keycloak Auth ────────────────────────────────
+let keycloakToken = null;
+let keycloakInstance = null;
 
-(function initAuth() {
+async function initKeycloak() {
   const overlay = document.getElementById('auth-overlay');
-  const saved = getApiKey();
-  if (saved) { overlay.style.display = 'none'; return; }
 
-  document.getElementById('auth-submit').onclick = async () => {
-    const key = document.getElementById('auth-key-input').value.trim();
-    if (!key) return;
-    const errEl = document.getElementById('auth-error');
-    try {
-      const res = await fetch(`${API}/definitions/models`, { headers: { 'X-API-Key': key } });
-      if (res.ok) {
-        setApiKey(key);
-        overlay.style.display = 'none';
-        location.reload();
-      } else {
-        errEl.textContent = res.status === 403 ? 'Insufficient permissions. Need manage or admin key.' : 'Invalid API key.';
-        errEl.style.display = '';
+  // Detect Keycloak URL from server config
+  let kcUrl, kcRealm;
+  try {
+    const configRes = await fetch(`${API}/auth/config`);
+    if (configRes.ok) {
+      const config = await configRes.json();
+      kcUrl = config.keycloakUrl;
+      kcRealm = config.keycloakRealm;
+    }
+  } catch {}
+
+  if (!kcUrl) {
+    // Keycloak not configured — fall back to no auth or show message
+    overlay.style.display = 'none';
+    console.log('Keycloak not configured, running without auth');
+    return;
+  }
+
+  // Load Keycloak JS adapter dynamically
+  try {
+    const script = document.createElement('script');
+    script.src = `${kcUrl}/js/keycloak.js`;
+    await new Promise((resolve, reject) => { script.onload = resolve; script.onerror = reject; document.head.appendChild(script); });
+  } catch {
+    document.getElementById('auth-error').textContent = 'Cannot load Keycloak. Check if Keycloak is running.';
+    document.getElementById('auth-error').style.display = '';
+    document.getElementById('auth-hint').textContent = `Expected at: ${kcUrl}`;
+    return;
+  }
+
+  const kc = new Keycloak({ url: kcUrl, realm: kcRealm, clientId: 'spatial-cms-ui' });
+  keycloakInstance = kc;
+
+  try {
+    const authenticated = await kc.init({
+      onLoad: 'check-sso',
+      silentCheckSsoRedirectUri: window.location.origin + '/silent-check-sso.html',
+      pkceMethod: 'S256',
+    });
+
+    if (authenticated) {
+      keycloakToken = kc.token;
+      overlay.style.display = 'none';
+
+      // Auto-refresh token
+      setInterval(async () => {
+        try { await kc.updateToken(30); keycloakToken = kc.token; } catch { kc.login(); }
+      }, 30000);
+
+      // Show user info in topbar
+      const userInfo = kc.tokenParsed;
+      const userEl = document.getElementById('user-info');
+      if (userEl && userInfo) {
+        const roles = userInfo.realm_access?.roles?.filter(r => ['admin','reviewer','editor','viewer'].includes(r)) || [];
+        userEl.innerHTML = `<span style="font-size:12px;color:var(--muted)">${userInfo.preferred_username} (${roles[0] || 'user'})</span> <button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="keycloakInstance.logout()">Logout</button>`;
+        userEl.style.display = 'flex';
       }
-    } catch { errEl.textContent = 'Cannot connect to server.'; errEl.style.display = ''; }
-  };
-  document.getElementById('auth-key-input').onkeydown = (e) => { if (e.key === 'Enter') document.getElementById('auth-submit').click(); };
-})();
+    } else {
+      // Not authenticated — show login button
+      document.querySelector('#auth-overlay p').textContent = 'Sign in to access the admin panel';
+      const loginBtn = document.getElementById('auth-login-btn');
+      loginBtn.style.display = '';
+      loginBtn.onclick = () => kc.login();
+      document.getElementById('auth-hint').textContent = 'You will be redirected to the login page';
+    }
+  } catch (err) {
+    document.getElementById('auth-error').textContent = 'Keycloak init failed: ' + err.message;
+    document.getElementById('auth-error').style.display = '';
+  }
+}
+
+initKeycloak();
 
 // ─── API + Utils ───────────────────────────────────
 async function api(path, opts = {}) {
   const headers = { 'Content-Type': 'application/json' };
-  const key = getApiKey();
-  if (key) headers['X-API-Key'] = key;
+  // JWT token from Keycloak (for human users)
+  if (keycloakToken) headers['Authorization'] = `Bearer ${keycloakToken}`;
   const res = await fetch(`${API}${path}`, { headers, ...opts });
-  if (res.status === 401 || res.status === 403) {
-    sessionStorage.removeItem('spatial_cms_key');
-    document.getElementById('auth-overlay').style.display = 'flex';
+  if (res.status === 401) {
+    if (keycloakInstance) keycloakInstance.login();
     throw new Error('Authentication required');
   }
   const data = await res.json();

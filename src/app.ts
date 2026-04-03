@@ -30,6 +30,17 @@ app.get("/health", async (_req, res) => {
   }
 });
 
+// Auth config (public, no auth needed — frontend uses this to discover Keycloak)
+app.get("/api/v1/auth/config", (_req, res) => {
+  const keycloakUrl = process.env.KEYCLOAK_URL;
+  const keycloakRealm = process.env.KEYCLOAK_REALM;
+  if (keycloakUrl && keycloakRealm) {
+    res.json({ keycloakUrl, keycloakRealm, clientId: "spatial-cms-ui" });
+  } else {
+    res.json({ keycloakUrl: null, keycloakRealm: null });
+  }
+});
+
 // CORS for all API routes (external tools, viewer, dedup tool)
 app.use("/api/v1", (
   _req: express.Request,

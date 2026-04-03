@@ -1,0 +1,75 @@
+{
+  "realm": "spatial-cms",
+  "enabled": true,
+  "roles": {
+    "realm": [
+      { "name": "viewer", "description": "Read-only access" },
+      { "name": "editor", "description": "Create proposals and import data" },
+      { "name": "reviewer", "description": "Review and approve proposals" },
+      { "name": "admin", "description": "Full access including model management" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "spatial-cms-ui",
+      "enabled": true,
+      "publicClient": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": ["*"],
+      "webOrigins": ["*"],
+      "protocol": "openid-connect",
+      "standardFlowEnabled": true,
+      "defaultClientScopes": ["openid", "profile", "email", "roles"]
+    }
+  ],
+  "clientScopes": [
+    {
+      "name": "roles",
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "realm roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "config": {
+            "multivalued": "true",
+            "claim.name": "realm_access.roles",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "admin",
+      "enabled": true,
+      "email": "admin@spatial-cms.local",
+      "firstName": "Admin",
+      "lastName": "User",
+      "credentials": [{ "type": "password", "value": "admin", "temporary": false }],
+      "realmRoles": ["admin"]
+    },
+    {
+      "username": "editor",
+      "enabled": true,
+      "email": "editor@spatial-cms.local",
+      "firstName": "Editor",
+      "lastName": "User",
+      "credentials": [{ "type": "password", "value": "editor", "temporary": false }],
+      "realmRoles": ["editor"]
+    },
+    {
+      "username": "reviewer",
+      "enabled": true,
+      "email": "reviewer@spatial-cms.local",
+      "firstName": "Reviewer",
+      "lastName": "User",
+      "credentials": [{ "type": "password", "value": "reviewer", "temporary": false }],
+      "realmRoles": ["reviewer"]
+    }
+  ]
+}

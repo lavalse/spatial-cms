@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import crypto from "crypto";
 import prisma from "../db/client.js";
+import { extractJwtAuth } from "./jwtAuth.js";
 
 const SCOPE_LEVELS: Record<string, number> = {
   delivery: 1,
@@ -8,35 +9,49 @@ const SCOPE_LEVELS: Record<string, number> = {
   admin: 3,
 };
 
+function hasScope(keyScope: string, requiredScope: string): boolean {
+  return (SCOPE_LEVELS[keyScope] ?? 0) >= (SCOPE_LEVELS[requiredScope] ?? 0);
+}
+
 export function requireApiKey(requiredScope: string = "delivery") {
-  return (req: Request, res: Response, next: NextFunction) => {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    // Dev mode: skip all auth
     if (process.env.DELIVERY_API_KEY_REQUIRED === "false") {
       return next();
     }
 
+    // Try 1: JWT (Keycloak) — Authorization: Bearer <token>
+    const jwtAuth = await extractJwtAuth(req);
+    if (jwtAuth) {
+      if (!hasScope(jwtAuth.scope, requiredScope)) {
+        res.status(403).json({ error: `Insufficient role. Required scope: ${requiredScope}, your roles: ${jwtAuth.roles.join(", ")}` });
+        return;
+      }
+      return next();
+    }
+
+    // Try 2: API Key — X-API-Key header
     const rawKey = req.header("X-API-Key");
     if (!rawKey) {
-      res.status(401).json({ error: "Missing X-API-Key header" });
+      res.status(401).json({ error: "Authentication required. Use Authorization: Bearer <token> or X-API-Key header." });
       return;
     }
 
     const keyHash = crypto.createHash("sha256").update(rawKey).digest("hex");
 
-    prisma.apiKey
-      .findUnique({ where: { keyHash } })
-      .then((apiKey) => {
-        if (!apiKey || apiKey.revokedAt) {
-          res.status(403).json({ error: "Invalid or revoked API key" });
-          return;
-        }
-        const keyLevel = SCOPE_LEVELS[apiKey.scope] ?? 0;
-        const requiredLevel = SCOPE_LEVELS[requiredScope] ?? 0;
-        if (keyLevel < requiredLevel) {
-          res.status(403).json({ error: `Insufficient scope. Required: ${requiredScope}, got: ${apiKey.scope}` });
-          return;
-        }
-        next();
-      })
-      .catch(next);
+    try {
+      const apiKey = await prisma.apiKey.findUnique({ where: { keyHash } });
+      if (!apiKey || apiKey.revokedAt) {
+        res.status(403).json({ error: "Invalid or revoked API key" });
+        return;
+      }
+      if (!hasScope(apiKey.scope, requiredScope)) {
+        res.status(403).json({ error: `Insufficient scope. Required: ${requiredScope}, got: ${apiKey.scope}` });
+        return;
+      }
+      next();
+    } catch (err) {
+      next(err);
+    }
   };
 }
