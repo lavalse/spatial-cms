@@ -41,10 +41,11 @@ tests/
     proposal-workflow.test.ts  # Proposal → approve/reject → restore/purge lifecycle
     delivery-api.test.ts       # Pagination, bbox, GeoJSON, schema, filtering
     ingestion.test.ts          # Validate, import, governed, skipInvalid
+    api-keys-auth.test.ts      # API Key scopes, auth middleware, bootstrap, revoke
+    publish-metadata.test.ts   # Publish channels, field projection, DCAT metadata
 
-Note: Tests run with DELIVERY_API_KEY_REQUIRED=false (auth disabled).
-Auth, DCAT metadata, publish channels, and field projection are not
-yet covered by automated tests.
+Note: Most tests run with DELIVERY_API_KEY_REQUIRED=false (auth disabled).
+api-keys-auth.test.ts enables auth internally to test scope enforcement.
 ```
 
 ## How It Works

@@ -21,7 +21,7 @@ Core invariant: **ALL data changes go through proposals. No direct entity writes
 ```bash
 docker compose up -d          # PostGIS + Directus + Keycloak
 npm run dev                   # Express on port 3001
-npm test                      # Run 25 integration tests
+npm test                      # Run 46 integration tests
 ```
 
 ## Project Structure
@@ -70,6 +70,8 @@ tests/
     proposal-workflow.test.ts # Proposal → approve/reject → restore/purge lifecycle
     delivery-api.test.ts      # Pagination, bbox, GeoJSON, filter, schema
     ingestion.test.ts         # Validate, import, governed, skipInvalid
+    api-keys-auth.test.ts     # API Key scopes, auth middleware, bootstrap, revoke
+    publish-metadata.test.ts  # Publish channels, field projection, DCAT metadata
 examples/
   viewer/                     # Consumer demo app (Delivery API + MapLibre GL JS)
     index.html                # Dataset selector, schema-driven, 2D/3D toggle, bbox/near search
