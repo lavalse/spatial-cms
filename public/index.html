@@ -187,6 +187,7 @@
     <div class="sidebar-item" data-section="integrate" onclick="nav('integrate/import')" data-nav="integrate/import"><span>Import Data</span></div>
     <div class="sidebar-item" data-section="integrate" onclick="nav('integrate/api')" data-nav="integrate/api"><span>Import API</span></div>
     <div class="sidebar-item" data-section="integrate" onclick="nav('integrate/management')" data-nav="integrate/management"><span>Management API</span></div>
+    <div class="sidebar-item" data-section="integrate" onclick="nav('integrate/api-keys')" data-nav="integrate/api-keys"><span>API Keys</span></div>
 
     <div class="sidebar-section" data-section="integrate" style="opacity:0.5;font-size:9px">Dev Only</div>
     <div class="sidebar-item" data-section="integrate" onclick="nav('dev/api')" data-nav="dev/api" style="opacity:0.5"><span>API Explorer</span></div>
@@ -341,6 +342,7 @@ async function router() {
     else if (route === 'integrate/import') await viewImportData(main);
     else if (route === 'integrate/api') await viewImportApi(main);
     else if (route === 'integrate/management') await viewManagementApi(main);
+    else if (route === 'integrate/api-keys') await viewApiKeys(main);
     else if (route === 'integrate/ingestion') await viewImportData(main); // legacy redirect
     else if (route === 'dev/api') await viewApiPlayground(main);
     else if (route === 'dev/console') await viewPublishConsole(main);
@@ -2643,6 +2645,90 @@ for name in duplicates:
 print(f"Created delete proposals for {len(duplicates)} duplicate groups")
 # → Go to Review Queue to approve/reject</pre>
     </div>`;
+}
+
+// ─── API Keys ──────────────────────────────────────
+async function viewApiKeys(main) {
+  setBreadcrumb(['Integrate'], ['API Keys']);
+  setActiveNav('integrate/api-keys');
+
+  const [keys, status] = await Promise.all([
+    api('/api-keys').catch(() => []),
+    api('/api-keys/status').catch(() => ({ required: false })),
+  ]);
+
+  main.innerHTML = `
+    <div class="page-header">
+      <div><h2>API Keys</h2><div class="sub">Manage access keys for the Delivery API</div></div>
+      <button class="btn btn-primary" id="gen-key-btn">Generate New Key</button>
+    </div>
+
+    ${!status.required ? `<div class="card" style="background:#fef3c7;border:1px solid #fde68a">
+      <div style="font-size:13px;color:#92400e">API key authentication is currently <strong>disabled</strong> (DELIVERY_API_KEY_REQUIRED=false). All Delivery API requests are allowed without a key.</div>
+    </div>` : ''}
+
+    <div class="card">
+      <h3>How It Works</h3>
+      <p style="color:var(--muted);font-size:13px;line-height:1.6;margin-bottom:8px">
+        When enabled, all Delivery API requests require an <code>X-API-Key</code> header.
+        OGC API and Management API are not affected.
+      </p>
+      <pre style="font-size:12px">curl -H "X-API-Key: scms_your_key_here" ${window.location.origin}/api/v1/delivery/datasets</pre>
+    </div>
+
+    <div id="key-created-area"></div>
+
+    <div class="card">
+      <h3>Active Keys</h3>
+      <div id="keys-table"></div>
+    </div>`;
+
+  // Render keys table
+  function renderKeys() {
+    const el = $('keys-table');
+    if (!keys.length) { el.innerHTML = '<p style="color:var(--muted)">No API keys yet.</p>'; return; }
+    el.innerHTML = `<table><thead><tr><th>Name</th><th>Key Prefix</th><th>Created</th><th>Status</th><th></th></tr></thead>
+      <tbody>${keys.map(k => `<tr>
+        <td>${k.name}</td>
+        <td><code style="font-size:12px">${k.keyPrefix}...</code></td>
+        <td style="color:var(--muted)">${new Date(k.createdAt).toLocaleDateString()}</td>
+        <td>${k.revokedAt ? `<span style="color:var(--danger);font-size:12px">Revoked ${new Date(k.revokedAt).toLocaleDateString()}</span>` : badge('active')}</td>
+        <td>${!k.revokedAt ? `<button class="btn btn-ghost btn-sm" style="color:var(--danger)" data-revoke="${k.id}" data-key-name="${k.name}">Revoke</button>` : ''}</td>
+      </tr>`).join('')}</tbody></table>`;
+
+    el.querySelectorAll('[data-revoke]').forEach(btn => {
+      btn.onclick = async () => {
+        if (!confirm(\`Revoke API key "\${btn.dataset.keyName}"?\\n\\nAny system using this key will lose access to the Delivery API.\`)) return;
+        try {
+          await api(\`/api-keys/\${btn.dataset.revoke}\`, { method: 'DELETE' });
+          toast('Key revoked');
+          nav('integrate/api-keys');
+        } catch (err) { toast(err.message, 'error'); }
+      };
+    });
+  }
+  renderKeys();
+
+  // Generate key
+  $('gen-key-btn').onclick = async () => {
+    const name = prompt('Key name (e.g. "CKAN Portal", "ETL Pipeline"):');
+    if (!name) return;
+    try {
+      const result = await api('/api-keys', { method: 'POST', body: JSON.stringify({ name }) });
+      $('key-created-area').innerHTML = \`
+        <div class="card" style="border:2px solid var(--success);background:#f0fdf4">
+          <h3 style="color:var(--success);margin-bottom:8px">Key Generated</h3>
+          <p style="font-size:13px;color:var(--danger);margin-bottom:12px;font-weight:600">Copy this key now. It will not be shown again.</p>
+          <div style="display:flex;gap:8px;align-items:center">
+            <code id="new-key-value" style="flex:1;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:4px;font-size:14px;word-break:break-all">\${result.key}</code>
+            <button class="btn btn-primary btn-sm" onclick="copyText(document.getElementById('new-key-value').textContent)">Copy</button>
+          </div>
+          <div style="margin-top:8px;font-size:12px;color:var(--muted)">Name: \${result.name} &middot; Prefix: \${result.keyPrefix}...</div>
+        </div>\`;
+      keys.unshift({ id: result.id, name: result.name, keyPrefix: result.keyPrefix, createdAt: result.createdAt, revokedAt: null });
+      renderKeys();
+    } catch (err) { toast(err.message, 'error'); }
+  };
 }
 
 // ─── OGC Services Docs ─────────────────────────────

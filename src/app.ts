@@ -12,6 +12,8 @@ import { ingestionRouter } from "./modules/ingestion/ingestion.router.js";
 import { definitionRouter } from "./modules/definition/definition.router.js";
 import { deliveryRouter } from "./modules/delivery/delivery.router.js";
 import { ogcRouter } from "./modules/delivery/ogc.router.js";
+import { apiKeyRouter } from "./modules/api-keys/api-key.router.js";
+import { requireApiKey } from "./middleware/apiKeyAuth.js";
 
 const app = express();
 
@@ -36,7 +38,7 @@ app.use("/api/v1", (
 ) => {
   res.header("Access-Control-Allow-Origin", "*");
   res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-  res.header("Access-Control-Allow-Headers", "Content-Type");
+  res.header("Access-Control-Allow-Headers", "Content-Type, X-API-Key");
   if (_req.method === "OPTIONS") { res.sendStatus(204); return; }
   next();
 });
@@ -49,7 +51,8 @@ app.use("/api/v1/publications", publicationRouter);
 app.use("/api/v1/ingestion", ingestionRouter);
 app.use("/api/v1/definitions", definitionRouter);
 
-app.use("/api/v1/delivery", deliveryRouter);
+app.use("/api/v1/api-keys", apiKeyRouter);
+app.use("/api/v1/delivery", requireApiKey, deliveryRouter);
 app.use("/api/v1/ogc", ogcRouter);
 
 // Global error handler
