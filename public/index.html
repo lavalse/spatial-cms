@@ -435,7 +435,15 @@ function h(tag, attrs, ...children) {
   children.flat().forEach(c => { if (c != null) el.append(typeof c === 'string' ? c : c); });
   return el;
 }
-function badge(status) { return `<span class="badge badge-${status}">${status}</span>`; }
+const SCOPE_TIPS = {
+  delivery: 'Read-only access to Delivery API (published data)',
+  manage: 'Read/Write access to Management + Ingestion API',
+  admin: 'Full access including Definitions + API Key management',
+};
+function badge(status) {
+  const tip = SCOPE_TIPS[status];
+  return `<span class="badge badge-${status}"${tip ? ` title="${tip}" style="cursor:help"` : ''}>${status}</span>`;
+}
 function setBreadcrumb(...parts) {
   $('breadcrumb').innerHTML = parts.map((p, i) =>
     i < parts.length - 1
