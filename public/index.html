@@ -2627,21 +2627,42 @@ async function viewManagementApi(main) {
     <div class="page-header"><div><h2>Management API</h2><div class="sub">Full read/write API for external tools, scripts, and integrations</div></div></div>
 
     <div class="card">
+      <h3>Authentication</h3>
+      <p style="color:var(--muted);font-size:13px;line-height:1.6;margin-bottom:12px">All API requests (except OGC) require authentication via <strong>JWT token</strong> (human users) or <strong>API Key</strong> (machine consumers).</p>
+      <table style="box-shadow:none;font-size:13px"><tbody>
+        <tr><td style="font-weight:600">JWT (Keycloak)</td><td><code>Authorization: Bearer &lt;token&gt;</code></td><td>Human users via browser login</td></tr>
+        <tr><td style="font-weight:600">API Key</td><td><code>X-API-Key: scms_xxx</code></td><td>Machine consumers (ETL, scripts, tools)</td></tr>
+      </tbody></table>
+      <div style="margin-top:12px;font-size:13px">
+        <div style="font-weight:600;color:var(--muted);font-size:12px;margin-bottom:6px">Scope / Role requirements:</div>
+        <table style="box-shadow:none;font-size:12px"><tbody>
+          <tr><td><code>delivery</code></td><td>Delivery API (read-only)</td><td>viewer role / delivery key</td></tr>
+          <tr><td><code>manage</code></td><td>Management + Ingestion API</td><td>editor/reviewer role / manage key</td></tr>
+          <tr><td><code>admin</code></td><td>Definitions + API Key management</td><td>admin role / admin key</td></tr>
+          <tr><td><em>none</em></td><td>OGC API</td><td>public, no auth needed</td></tr>
+        </tbody></table>
+      </div>
+    </div>
+
+    <div class="card">
       <h3>When to Use Which API</h3>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;font-size:13px">
         <div style="padding:12px;background:var(--bg);border-radius:var(--radius)">
           <div style="font-weight:600;color:var(--success);margin-bottom:4px">Delivery API</div>
           <div style="color:var(--muted)">Read-only. Published data only. For consumer apps.</div>
+          <div style="font-size:11px;color:var(--warning);margin-top:4px">Scope: delivery</div>
           <code style="font-size:11px">/api/v1/delivery/</code>
         </div>
         <div style="padding:12px;background:var(--bg);border-radius:var(--radius)">
           <div style="font-weight:600;color:var(--primary);margin-bottom:4px">Import API</div>
           <div style="color:var(--muted)">Write-only. Batch import. For data pipelines.</div>
+          <div style="font-size:11px;color:var(--warning);margin-top:4px">Scope: manage</div>
           <code style="font-size:11px">/api/v1/ingestion/</code>
         </div>
         <div style="padding:12px;background:#eff6ff;border-radius:var(--radius);border:1px solid #bfdbfe">
           <div style="font-weight:600;color:#1e40af;margin-bottom:4px">Management API</div>
           <div style="color:var(--muted)">Read + Write. All data. For tools & automation.</div>
+          <div style="font-size:11px;color:var(--warning);margin-top:4px">Scope: manage</div>
           <code style="font-size:11px">/api/v1/entities, /proposals, ...</code>
         </div>
       </div>
@@ -2781,10 +2802,16 @@ async function viewApiKeys(main) {
 
     <div class="card">
       <h3>How It Works</h3>
-      <p style="color:var(--muted);font-size:13px;line-height:1.6;margin-bottom:8px">
-        When enabled, all Delivery API requests require an <code>X-API-Key</code> header.
-        OGC API and Management API are not affected.
+      <p style="color:var(--muted);font-size:13px;line-height:1.6;margin-bottom:12px">
+        API Keys authenticate machine consumers (ETL pipelines, external tools, viewer apps).
+        Human users authenticate via Keycloak (JWT). Both methods are accepted on all protected endpoints.
+        OGC API is always public (no auth required).
       </p>
+      <table style="box-shadow:none;font-size:12px;margin-bottom:12px"><thead><tr><th>Scope</th><th>Access Level</th><th>Use For</th></tr></thead><tbody>
+        <tr><td><code>delivery</code></td><td>Delivery API (read-only)</td><td>Consumer apps, CKAN, data portals</td></tr>
+        <tr><td><code>manage</code></td><td>+ Management + Ingestion API</td><td>Dedup tools, ETL, CLI import scripts</td></tr>
+        <tr><td><code>admin</code></td><td>+ Definitions + API Key management</td><td>System administration, deployment scripts</td></tr>
+      </tbody></table>
       <pre style="font-size:12px">curl -H "X-API-Key: scms_your_key_here" ${window.location.origin}/api/v1/delivery/datasets</pre>
     </div>
 
