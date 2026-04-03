@@ -8,6 +8,8 @@ export async function createModelDefinition(data: {
   name: string;
   description?: string;
   geometryType?: "NONE" | "POINT" | "LINESTRING" | "POLYGON" | "MIXED";
+  is3D?: boolean;
+  srid?: number;
 }) {
   return prisma.modelDefinition.create({
     data: {
@@ -15,6 +17,8 @@ export async function createModelDefinition(data: {
       name: data.name,
       description: data.description,
       geometryType: data.geometryType ?? "NONE",
+      is3D: data.is3D ?? false,
+      srid: data.srid ?? 4326,
     },
     include: { fields: true },
   });
@@ -47,6 +51,8 @@ export async function updateModelDefinition(
     name?: string;
     description?: string;
     geometryType?: "NONE" | "POINT" | "LINESTRING" | "POLYGON" | "MIXED";
+    is3D?: boolean;
+    srid?: number;
   },
 ) {
   return prisma.modelDefinition.update({

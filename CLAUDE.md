@@ -19,7 +19,7 @@ Core invariant: **ALL data changes go through proposals. No direct entity writes
 ## Quick Start
 
 ```bash
-docker compose up -d          # PostGIS + Directus
+docker compose up -d          # PostGIS + Directus + Keycloak
 npm run dev                   # Express on port 3001
 npm test                      # Run 25 integration tests
 ```
@@ -266,8 +266,11 @@ Old routes (`#content`, `#models`, `#proposals`, `#datasets`, `#publications`, `
 | Express API + Frontend | 3001 |
 | PostgreSQL + PostGIS | 5434 |
 | Directus | 8055 |
+| Keycloak | 8180 |
 
 ## Credentials
 
 - **Directus**: admin@example.com / admin
 - **PostgreSQL**: spatial_cms / spatial_cms / spatial_cms (user/pass/db)
+- **Keycloak**: admin / admin (master realm admin)
+- **CMS Users**: admin/admin, editor/editor, reviewer/reviewer (spatial-cms realm)

@@ -9,14 +9,36 @@ services:
       - pgdata:/var/lib/postgresql/data
     restart: always
 
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: start-dev --import-realm
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://db:5432/spatial_cms
+      KC_DB_USERNAME: spatial_cms
+      KC_DB_PASSWORD: ${DB_PASSWORD:-spatial_cms}
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+      KC_HTTP_PORT: "8180"
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+    depends_on:
+      - db
+    volumes:
+      - ./docker/keycloak-realm.json:/opt/keycloak/data/import/realm.json
+    restart: always
+
   cms:
     build: .
     environment:
       DATABASE_URL: postgresql://spatial_cms:${DB_PASSWORD:-spatial_cms}@db:5432/spatial_cms?schema=public
       PORT: "3001"
       DELIVERY_API_KEY_REQUIRED: "true"
+      KEYCLOAK_URL: http://keycloak:8180
+      KEYCLOAK_REALM: spatial-cms
     depends_on:
       - db
+      - keycloak
     restart: always
 
   viewer:
@@ -33,11 +55,11 @@ services:
     image: nginx:alpine
     ports:
       - "80:80"
-      - "127.0.0.1:8080:8080"   # Internal-only: full CMS access via localhost
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
       - cms
+      - keycloak
       - viewer
     restart: always
 

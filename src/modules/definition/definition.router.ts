@@ -11,12 +11,16 @@ const createModelSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
   geometryType: z.enum(["NONE", "POINT", "LINESTRING", "POLYGON", "MIXED"]).optional(),
+  is3D: z.boolean().optional(),
+  srid: z.number().int().optional(),
 });
 
 const updateModelSchema = z.object({
   name: z.string().min(1).optional(),
   description: z.string().optional(),
   geometryType: z.enum(["NONE", "POINT", "LINESTRING", "POLYGON", "MIXED"]).optional(),
+  is3D: z.boolean().optional(),
+  srid: z.number().int().optional(),
 });
 
 const createFieldSchema = z.object({

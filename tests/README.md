@@ -38,9 +38,13 @@ tests/
     setup.ts        # Database cleanup, test model/policy creation
   integration/
     version-geometry.test.ts   # Geometry preserved in version snapshots
-    proposal-workflow.test.ts  # Proposal → approve/reject → entity lifecycle
+    proposal-workflow.test.ts  # Proposal → approve/reject → restore/purge lifecycle
     delivery-api.test.ts       # Pagination, bbox, GeoJSON, schema, filtering
     ingestion.test.ts          # Validate, import, governed, skipInvalid
+
+Note: Tests run with DELIVERY_API_KEY_REQUIRED=false (auth disabled).
+Auth, DCAT metadata, publish channels, and field projection are not
+yet covered by automated tests.
 ```
 
 ## How It Works

@@ -42,10 +42,10 @@ This is **NOT** part of the CMS. It demonstrates how external tools can use the 
 
 | Endpoint | Purpose |
 |----------|---------|
-| `GET /definitions/models` | List available models |
-| `GET /definitions/models/:id/schema` | Get field definitions |
-| `GET /entities?type=&page=&pageSize=` | Load entity data |
-| `POST /proposals` | Create update/delete proposals |
+| `GET /api/v1/definitions/models` | List available models |
+| `GET /api/v1/definitions/models/:id/schema` | Get field definitions |
+| `GET /api/v1/entities?type=&page=&pageSize=` | Load entity data |
+| `POST /api/v1/proposals` | Create update/delete proposals |
 
 ## Tech Stack
 
