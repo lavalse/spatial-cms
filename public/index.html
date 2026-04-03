@@ -185,7 +185,7 @@
     <div class="sidebar-spacer"></div>
     <div class="sidebar-section" data-section="integrate">Integrate</div>
     <div class="sidebar-item" data-section="integrate" onclick="nav('integrate/import')" data-nav="integrate/import"><span>Import Data</span></div>
-    <div class="sidebar-item" data-section="integrate" onclick="nav('integrate/api')" data-nav="integrate/api"><span>Import API</span></div>
+    <div class="sidebar-item" data-section="integrate" onclick="nav('integrate/api')" data-nav="integrate/api"><span>Ingestion API</span></div>
     <div class="sidebar-item" data-section="integrate" onclick="nav('integrate/management')" data-nav="integrate/management"><span>Management API</span></div>
     <div class="sidebar-item" data-section="integrate" onclick="nav('integrate/api-keys')" data-nav="integrate/api-keys"><span>API Keys</span></div>
 
@@ -1990,20 +1990,20 @@ npx spatial-cms import data.geojson --model building --mode governed</pre>
   updateCrsHint();
 }
 
-// ─── Import API (for developers) ───────────────────
+// ─── Ingestion API (for developers) ───────────────────
 async function viewImportApi(main) {
-  setBreadcrumb(['Integrate'], ['Import API']);
+  setBreadcrumb(['Integrate'], ['Ingestion API']);
   setActiveNav('integrate/api');
   const models = modelCache;
   const baseUrl = window.location.origin + '/api/v1';
 
   main.innerHTML = `
-    <div class="page-header"><div><h2>Import API</h2><div class="sub">API endpoints for data pipelines and external system integration</div></div></div>
+    <div class="page-header"><div><h2>Ingestion API</h2><div class="sub">API endpoints for data pipelines and external system integration</div></div></div>
 
     <div class="card">
       <h3>Authentication</h3>
       <p style="color:var(--muted);font-size:13px;line-height:1.6;margin-bottom:8px">
-        Import API requires <strong>manage</strong> scope or higher.
+        Ingestion API requires <strong>manage</strong> scope or higher.
       </p>
       <table style="box-shadow:none;font-size:12px"><tbody>
         <tr><td>JWT (human)</td><td><code>Authorization: Bearer &lt;token&gt;</code></td><td>editor / reviewer / admin role</td></tr>
@@ -2665,7 +2665,7 @@ async function viewManagementApi(main) {
           <code style="font-size:11px">/api/v1/delivery/</code>
         </div>
         <div style="padding:12px;background:var(--bg);border-radius:var(--radius)">
-          <div style="font-weight:600;color:var(--primary);margin-bottom:4px">Import API</div>
+          <div style="font-weight:600;color:var(--primary);margin-bottom:4px">Ingestion API</div>
           <div style="color:var(--muted)">Write-only. Batch import. For data pipelines.</div>
           <div style="font-size:11px;color:var(--warning);margin-top:4px">Scope: manage</div>
           <code style="font-size:11px">/api/v1/ingestion/</code>

@@ -252,7 +252,7 @@ Organized by product workflow: **Define → Manage → Publish**
 | `#publish/delivery` | Publish | Delivery API docs + inline preview |
 | `#publish/ogc` | Publish | OGC Services docs + QGIS connection guide |
 | `#integrate/import` | Integrate | File import (GeoJSON/CSV/CityJSON + field mapping) |
-| `#integrate/api` | Integrate | Import API docs + test data generator + validate/import |
+| `#integrate/api` | Integrate | Ingestion API docs + test data generator + validate/import |
 | `#integrate/management` | Integrate | Management API docs + integration examples |
 | `#dev/api` | Dev Only | Interactive API endpoint explorer |
 | `#dev/console` | Dev Only | One-page publish workflow testing |
