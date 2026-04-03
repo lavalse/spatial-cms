@@ -287,11 +287,13 @@ async function initKeycloak() {
         const roles = tokenInfo.realm_access?.roles?.filter(r => ['admin','reviewer','editor','viewer'].includes(r)) || [];
         let username = tokenInfo.preferred_username || tokenInfo.name || tokenInfo.email;
 
-        // Fallback: load user profile if token doesn't have username
+        // Fallback: fetch from userinfo endpoint (CORS-safe)
         if (!username) {
           try {
-            const profile = await kc.loadUserProfile();
-            username = profile.username || profile.email || 'user';
+            const res = await fetch(`${kcUrl}/realms/${kcRealm}/protocol/openid-connect/userinfo`, {
+              headers: { 'Authorization': `Bearer ${kc.token}` }
+            });
+            if (res.ok) { const info = await res.json(); username = info.preferred_username || info.name || info.email || 'user'; }
           } catch { username = 'user'; }
         }
 
